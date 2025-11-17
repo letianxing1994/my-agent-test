@@ -1,0 +1,30 @@
+{
+  "aliyun": {
+    "oss": {
+      "endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
+      "bucket": "TODO-oss-bucket",
+      "accessKeyId": "TODO-aliyun-access-key-id",
+      "accessKeySecret": "TODO-aliyun-access-key-secret"
+    },
+    "mysql": "mysql://TODO-username:TODO-password@aliyun-rds:3306/gamedev",
+    "redis": "redis://TODO-aliyun-redis:6379",
+    "kafka": "kafka://TODO-aliyun-kafka:9092",
+    "logging": {
+      "slsProject": "gamedev-logs",
+      "slsEndpoint": "https://cn-hangzhou.log.aliyuncs.com"
+    }
+  },
+  "gcp": {
+    "gcs": {
+      "bucket": "TODO-gcs-bucket",
+      "credentials": "/path/to/TODO-gcp-key.json"
+    },
+    "mysql": "mysql://TODO-username:TODO-password@gcp-cloudsql:3306/gamedev",
+    "redis": "redis://TODO-gcp-redis:6379",
+    "pubsub": "projects/TODO-project/topics/gamedev-events",
+    "logging": {
+      "sink": "projects/TODO-project/logs/gamedev"
+    }
+  }
+}
+

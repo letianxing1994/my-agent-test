@@ -1,2 +1,5 @@
-// Export all tools from this directory
-export { weatherTool } from "./weather";
+// 游戏开发相关的工具
+// 目前暂时为空，后续可以添加游戏开发相关的工具
+// 例如：代码生成工具、资源验证工具等
+
+export {};

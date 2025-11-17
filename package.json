@@ -1,7 +1,7 @@
 {
-  "name": "my-agent-test",
+  "name": "game-dev-agent-system",
   "version": "0.1.0",
-  "description": "A VoltAgent application",
+  "description": "游戏开发Agent系统 - 多Agent协作开发游戏",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env ./src",
@@ -10,25 +10,49 @@
     "lint": "biome check ./src",
     "lint:fix": "biome check --write ./src",
     "typecheck": "tsc --noEmit",
-    "volt": "volt"
+    "test": "jest --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "start:a2a-server": "tsx --env-file=.env ./src/a2a-server/index.ts",
+    "start:planning-agent": "tsx --env-file=.env ./src/agents/planning/index.ts",
+    "start:art-agent": "tsx --env-file=.env ./src/agents/art/index.ts",
+    "start:music-agent": "tsx --env-file=.env ./src/agents/music/index.ts",
+    "start:tech-agent": "tsx --env-file=.env ./src/agents/tech/index.ts",
+    "start:test-agent": "tsx --env-file=.env ./src/agents/test/index.ts",
+    "start:workflow-consumer": "tsx --env-file=.env ./src/workers/workflowConsumer.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.11",
-    "@voltagent/cli": "^0.1.10",
-    "@voltagent/core": "^1.0.0",
-    "@voltagent/libsql": "^1.0.0",
-    "@voltagent/logger": "^1.0.0",
-    "@voltagent/server-hono": "^1.0.0",
-    "ai": "^5.0.51",
+    "@google-cloud/storage": "^7.11.2",
+    "@voltagent/core": "^1.2.4",
+    "ali-oss": "^6.17.1",
+    "archiver": "^7.0.1",
     "dotenv": "^16.4.7",
-    "zod": "^3.25.76"
+    "express": "^4.21.1",
+    "fs-extra": "^11.2.0",
+    "multer": "^1.4.5-lts.1",
+    "ws": "^8.18.0",
+    "zod": "^3.25.76",
+    "kafkajs": "^2.2.4",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@types/archiver": "^6.0.3",
+    "@types/express": "^5.0.0",
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^29.5.13",
+    "@types/multer": "^1.4.12",
     "@types/node": "^22.10.5",
+    "@types/uuid": "^9.0.8",
+    "@types/ws": "^8.5.13",
+    "@types/node-fetch": "^3.0.3",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
     "tsdown": "^0.15.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "uuid": "^9.0.1"
   },
   "engines": {
     "node": ">=20.19.0"

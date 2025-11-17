@@ -1,0 +1,48 @@
+{
+  "planning": {
+    "provider": "TODO-planning-provider",
+    "model": "TODO-planning-model",
+    "endpoint": "https://api.todo-planning.com/v1",
+    "apiKeyEnv": "PLANNING_API_KEY",
+    "extra": {
+      "temperature": 0.3
+    }
+  },
+  "art": {
+    "provider": "TODO-art-provider",
+    "model": "TODO-art-model",
+    "endpoint": "https://api.todo-art.com/v1",
+    "apiKeyEnv": "ART_API_KEY",
+    "extra": {
+      "stylePreset": "realistic"
+    }
+  },
+  "music": {
+    "provider": "TODO-music-provider",
+    "model": "TODO-music-model",
+    "endpoint": "https://api.todo-music.com/v1",
+    "apiKeyEnv": "MUSIC_API_KEY",
+    "extra": {
+      "sampleRate": 44100
+    }
+  },
+  "tech": {
+    "provider": "TODO-tech-provider",
+    "model": "TODO-tech-model",
+    "endpoint": "https://api.todo-tech.com/v1",
+    "apiKeyEnv": "TECH_API_KEY",
+    "extra": {
+      "language": "typescript"
+    }
+  },
+  "test": {
+    "provider": "TODO-test-provider",
+    "model": "TODO-test-model",
+    "endpoint": "https://api.todo-test.com/v1",
+    "apiKeyEnv": "TEST_API_KEY",
+    "extra": {
+      "mode": "regression"
+    }
+  }
+}
+

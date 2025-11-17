@@ -1,131 +1,263 @@
-import { Agent, createWorkflowChain } from "@voltagent/core";
+import { createWorkflowChain } from "@voltagent/core";
 import { z } from "zod";
+import { ExecutionMode, GDD, UserInput, UserInputSchema } from "../types";
 
 // ==============================================================================
-// Example: Human-in-the-Loop Expense Approval Workflow
-// Concepts: Suspend/resume and step-level schemas
-//
-// Test Scenarios for VoltOps Platform
-// 
-// Scenario 1: Small expense (auto-approved)
-// Input JSON:
-// {
-//   "employeeId": "EMP-123",
-//   "amount": 250,
-//   "category": "office-supplies",
-//   "description": "New laptop mouse and keyboard"
-// }
-// Result: Automatically approved by system, no manager approval needed
-//
-// Scenario 2: Large expense (requires manager approval)
-// Input JSON:
-// {
-//   "employeeId": "EMP-456",
-//   "amount": 750,
-//   "category": "travel",
-//   "description": "Flight tickets for client meeting"
-// }
-// Result: Workflow suspends, waiting for manager approval
-// Resume JSON:
-// {
-//   "approved": true,
-//   "managerId": "MGR-001",
-//   "comments": "Approved for important client",
-//   "adjustedAmount": 700
-// }
-//
-// Scenario 3: Large expense (rejected)
-// Input JSON:
-// {
-//   "employeeId": "EMP-789",
-//   "amount": 1500,
-//   "category": "equipment",
-//   "description": "Premium office chair"
-// }
-// Result: Workflow suspends, waiting for manager approval
-// Resume JSON:
-// {
-//   "approved": false,
-//   "managerId": "MGR-002",
-//   "comments": "Budget exceeded for this quarter"
-// }
+// 游戏开发工作流
+// 支持三种执行模式：顺序执行、异步并行、反馈循环
 // ==============================================================================
-export const expenseApprovalWorkflow = createWorkflowChain({
-  id: "expense-approval",
-  name: "Expense Approval Workflow",
-  purpose: "Process expense reports with manager approval for high amounts",
 
-  input: z.object({
-    employeeId: z.string(),
-    amount: z.number(),
-    category: z.string(),
-    description: z.string(),
-  }),
-  result: z.object({
-    status: z.enum(["approved", "rejected"]),
-    approvedBy: z.string(),
-    finalAmount: z.number(),
-  }),
+// 游戏开发工作流输入
+export const gameDevWorkflowInput = z.object({
+	projectId: z.string(),
+	projectName: z.string(),
+	userInput: UserInputSchema,
+	executionMode: z.enum(["sequential", "async_parallel", "feedback_loop"]),
+});
+
+// 游戏开发工作流结果
+export const gameDevWorkflowResult = z.object({
+	projectId: z.string(),
+	status: z.enum(["completed", "failed"]),
+	gdd: z.unknown().optional(), // GDD类型
+	assets: z.object({
+		art: z.array(z.string()),
+		music: z.array(z.string()),
+		code: z.string(),
+	}),
+	testReports: z.array(z.string()),
+});
+
+// 顺序执行工作流：策划 → 美术 → 音乐 → 技术 → 测试
+export const sequentialGameDevWorkflow = createWorkflowChain({
+	id: "sequential-game-dev",
+	name: "顺序执行游戏开发工作流",
+	purpose: "按顺序执行游戏开发的各个阶段，确保依赖正确",
+	input: gameDevWorkflowInput,
+	result: gameDevWorkflowResult,
 })
-  // Step 1: Validate expense and check if approval needed
-  .andThen({
-    id: "check-approval-needed",
-    // Define what data we expect when resuming this step
-    resumeSchema: z.object({
-      approved: z.boolean(),
-      managerId: z.string(),
-      comments: z.string().optional(),
-      adjustedAmount: z.number().optional(),
-    }),
-    execute: async ({ data, suspend, resumeData }) => {
-      // If we're resuming with manager's decision
-      if (resumeData) {
-        console.log(`Manager ${resumeData.managerId} made decision`);
-        return {
-          ...data,
-          approved: resumeData.approved,
-          approvedBy: resumeData.managerId,
-          finalAmount: resumeData.adjustedAmount || data.amount,
-          managerComments: resumeData.comments,
-        };
-      }
+	// Step 1: 策划阶段 - 生成GDD
+	.andThen({
+		id: "planning-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始策划阶段 - 项目: ${data.projectName}`);
+			// 这里应该调用Planning Agent
+			// 实际实现中会通过A2A服务器发送消息给Planning Agent
+			return {
+				...data,
+				phase: "planning",
+				gdd: null, // 将由Planning Agent生成
+			};
+		},
+	})
+	// Step 2: 美术阶段
+	.andThen({
+		id: "art-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始美术阶段 - 项目: ${data.projectName}`);
+			// 等待GDD完成后，调用Art Agent
+			return {
+				...data,
+				phase: "art",
+				assets: { art: [], music: [], code: "" },
+			};
+		},
+	})
+	// Step 3: 音乐阶段
+	.andThen({
+		id: "music-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始音乐阶段 - 项目: ${data.projectName}`);
+			// 等待美术完成后，调用Music Agent
+			return {
+				...data,
+				phase: "music",
+			};
+		},
+	})
+	// Step 4: 技术阶段
+	.andThen({
+		id: "tech-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始技术阶段 - 项目: ${data.projectName}`);
+			// 等待美术和音乐都完成后，调用Tech Agent
+			return {
+				...data,
+				phase: "tech",
+			};
+		},
+	})
+	// Step 5: 测试阶段
+	.andThen({
+		id: "test-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始测试阶段 - 项目: ${data.projectName}`);
+			// 等待技术完成后，调用Test Agent
+			return {
+				...data,
+				phase: "testing",
+				status: "completed" as const,
+			};
+		},
+	});
 
-      // Check if manager approval is needed (expenses over $500)
-      if (data.amount > 500) {
-        console.log(`Expense of $${data.amount} requires manager approval`);
+// 异步并行工作流：策划 → (美术+音乐并行) → 技术 → 测试
+export const parallelGameDevWorkflow = createWorkflowChain({
+	id: "parallel-game-dev",
+	name: "异步并行游戏开发工作流",
+	purpose: "美术和音乐并行执行，提高开发效率",
+	input: gameDevWorkflowInput,
+	result: gameDevWorkflowResult,
+})
+	// Step 1: 策划阶段
+	.andThen({
+		id: "planning-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始策划阶段 - 项目: ${data.projectName}`);
+			return {
+				...data,
+				phase: "planning",
+			};
+		},
+	})
+	// Step 2: 美术和音乐并行执行
+	.andThen({
+		id: "art-and-music-parallel",
+		execute: async ({ data }) => {
+			console.log(
+				`[工作流] 并行执行美术和音乐阶段 - 项目: ${data.projectName}`,
+			);
+			// 在实际实现中，这里会同时启动Art Agent和Music Agent
+			// 等待两者都完成后才继续
+			return {
+				...data,
+				phase: "art-music-parallel",
+			};
+		},
+	})
+	// Step 3: 技术阶段
+	.andThen({
+		id: "tech-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始技术阶段 - 项目: ${data.projectName}`);
+			return {
+				...data,
+				phase: "tech",
+			};
+		},
+	})
+	// Step 4: 测试阶段
+	.andThen({
+		id: "test-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始测试阶段 - 项目: ${data.projectName}`);
+			return {
+				...data,
+				phase: "testing",
+				status: "completed" as const,
+			};
+		},
+	});
 
-        // Suspend workflow and wait for manager input
-        await suspend("Manager approval required", {
-          employeeId: data.employeeId,
-          requestedAmount: data.amount,
-          category: data.category,
-        });
-      }
+// 反馈循环工作流：支持基于测试结果的迭代优化
+export const feedbackLoopGameDevWorkflow = createWorkflowChain({
+	id: "feedback-loop-game-dev",
+	name: "反馈循环游戏开发工作流",
+	purpose: "基于测试结果进行迭代优化，持续改进版本",
+	input: gameDevWorkflowInput,
+	result: gameDevWorkflowResult,
+})
+	// Step 1-5: 与并行工作流相同的步骤
+	.andThen({
+		id: "planning-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始策划阶段 - 项目: ${data.projectName}`);
+			return { ...data, phase: "planning" };
+		},
+	})
+	.andThen({
+		id: "art-and-music-parallel",
+		execute: async ({ data }) => {
+			console.log(
+				`[工作流] 并行执行美术和音乐阶段 - 项目: ${data.projectName}`,
+			);
+			return { ...data, phase: "art-music-parallel" };
+		},
+	})
+	.andThen({
+		id: "tech-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始技术阶段 - 项目: ${data.projectName}`);
+			return { ...data, phase: "tech" };
+		},
+	})
+	.andThen({
+		id: "test-phase",
+		execute: async ({ data }) => {
+			console.log(`[工作流] 开始测试阶段 - 项目: ${data.projectName}`);
+			return { ...data, phase: "testing" };
+		},
+	})
+	// Step 6: 反馈循环 - 根据测试结果决定是否需要重新执行
+	.andThen({
+		id: "feedback-loop",
+		resumeSchema: z.object({
+			needsRedesign: z.boolean(),
+			needsRefix: z.boolean(),
+			issues: z.array(z.string()),
+		}),
+		execute: async ({ data, suspend, resumeData }) => {
+			// 如果收到反馈数据，说明需要重新执行
+			if (resumeData) {
+				if (resumeData.needsRedesign) {
+					console.log(
+						`[工作流] 检测到设计问题，返回策划阶段 - 项目: ${data.projectName}`,
+					);
+					// 返回策划阶段重新设计
+					return {
+						...data,
+						phase: "planning",
+						feedbackIssues: resumeData.issues,
+					};
+				}
+				if (resumeData.needsRefix) {
+					console.log(
+						`[工作流] 检测到技术问题，返回技术阶段 - 项目: ${data.projectName}`,
+					);
+					// 返回技术阶段修复问题
+					return { ...data, phase: "tech", feedbackIssues: resumeData.issues };
+				}
+			}
 
-      // Auto-approve small expenses
-      return {
-        ...data,
-        approved: true,
-        approvedBy: "system",
-        finalAmount: data.amount,
-      };
-    },
-  })
+			// 检查测试结果，如果有问题则暂停等待反馈
+			// 在实际实现中，这里会检查测试报告
+			const hasIssues = false; // 从测试报告获取
 
-  // Step 2: Process the final decision
-  .andThen({
-    id: "process-decision",
-    execute: async ({ data }) => {
-      if (data.approved) {
-        console.log(`Expense approved for $${data.finalAmount}`);
-      } else {
-        console.log("Expense rejected");
-      }
+			if (hasIssues) {
+				await suspend("测试发现问题，等待反馈决定下一步", {
+					projectId: data.projectId,
+					testReport: "test-report-id",
+				});
+			}
 
-      return {
-        status: data.approved ? "approved" : "rejected",
-        approvedBy: data.approvedBy,
-        finalAmount: data.finalAmount,
-      };
-    },
-  });
+			// 没有问题，完成项目
+			return {
+				...data,
+				status: "completed" as const,
+			};
+		},
+	});
+
+// 根据执行模式选择工作流
+export function getGameDevWorkflow(executionMode: ExecutionMode) {
+	switch (executionMode) {
+		case ExecutionMode.SEQUENTIAL:
+			return sequentialGameDevWorkflow;
+		case ExecutionMode.ASYNC_PARALLEL:
+			return parallelGameDevWorkflow;
+		case ExecutionMode.FEEDBACK_LOOP:
+			return feedbackLoopGameDevWorkflow;
+		default:
+			return sequentialGameDevWorkflow;
+	}
+}
