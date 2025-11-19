@@ -7,12 +7,39 @@ export interface AgentModelDefaults {
 	endpoint?: string;
 	apiKey?: string;
 	apiKeyEnv?: string;
+	systemPrompt?: string;
 	extra?: Record<string, unknown>;
+	fallback?: AgentModelDefaults;
+}
+
+// 多模型配置（用于3D美术Agent）
+export interface MultiModelConfig {
+	name: string; // 模型标识，如 texture_generator, model_generator
+	provider: string;
+	model: string;
+	endpoint?: string;
+	apiKeyEnv?: string;
+	purpose: "texture" | "3d_model" | "other"; // 模型用途
+	extra?: Record<string, unknown>;
+	systemPrompt?: string;
+}
+
+// 3D美术Agent配置（支持多模型）
+export interface Art3DConfig {
+	models: MultiModelConfig[]; // 多个模型的数组
+	workflow: "sequential" | "parallel"; // 执行顺序：顺序或并行
+	systemPrompt?: string; // 整体提示词
+}
+
+// 美术 Agent 可以是 2D 或 3D 的配置对象
+export interface ArtAgentConfig {
+	"2d": AgentModelDefaults;
+	"3d": Art3DConfig;
 }
 
 type AgentId = "planning" | "art" | "music" | "tech" | "test";
 
-type AgentModelConfig = Record<AgentId, AgentModelDefaults>;
+type AgentModelConfig = Record<AgentId, AgentModelDefaults | ArtAgentConfig>;
 
 type StageToolOverrides = {
 	endpoint?: string;
@@ -38,9 +65,28 @@ function loadAgentModelConfig(): AgentModelConfig {
 	return cachedAgentModels;
 }
 
-export function getAgentModelConfig(agentId: AgentId): AgentModelDefaults {
+export function getAgentModelConfig(
+	agentId: AgentId,
+	dimension?: "2d" | "3d",
+): AgentModelDefaults | Art3DConfig {
 	const config = loadAgentModelConfig();
-	return config[agentId];
+	const agentConfig = config[agentId];
+
+	// 如果是美术 Agent 且配置是对象形式，根据 dimension 选择
+	if (agentId === "art" && typeof agentConfig === "object" && "2d" in agentConfig) {
+		const artConfig = agentConfig as ArtAgentConfig;
+		return dimension === "2d" ? artConfig["2d"] : artConfig["3d"];
+	}
+
+	return agentConfig as AgentModelDefaults;
+}
+
+// 新增：获取3D美术Agent的所有模型配置
+export function get3DArtModels(dimension?: "2d" | "3d"): MultiModelConfig[] | null {
+	if (dimension !== "3d") return null;
+	
+	const config = getAgentModelConfig("art", "3d") as Art3DConfig;
+	return config.models || null;
 }
 
 export function resolveModelRuntime(
@@ -48,9 +94,10 @@ export function resolveModelRuntime(
 	stageConfig?: {
 		model?: string;
 		tools?: StageToolOverrides;
+		dimension?: "2d" | "3d"; // 新增：支持美术 Agent 的 dimension
 	},
 ) {
-	const defaults = getAgentModelConfig(agentId);
+	const defaults = getAgentModelConfig(agentId, stageConfig?.dimension);
 	const resolvedModel = stageConfig?.model || defaults.model;
 	const endpoint =
 		stageConfig?.tools?.endpoint ||

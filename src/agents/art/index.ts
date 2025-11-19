@@ -9,6 +9,7 @@ import {
 	type AgentArtifact,
 	type AgentMessage,
 	type GDD,
+	type JsonValue,
 	MessageType,
 	type StageConfig,
 } from "../../types";
@@ -404,7 +405,7 @@ class ArtAgent {
         case MessageType.FEEDBACK:
 					await this.processFeedback(
 						data.projectId,
-						data.content as ResourceFeedback,
+						data.content as unknown as ResourceFeedback,
 					);
 					break;
 
@@ -712,15 +713,15 @@ class ArtAgent {
 			type: "art",
 			format: path.extname(resource.filePath)?.replace(".", "") || "bin",
 			url: resource.remoteUrl || resource.filePath,
-			source: "llm",
+			source: "llm" as const,
 			description: resource.description,
 			metadata: {
 				priority: resource.priority,
 				style: resource.style,
-				provider: resource.provider,
+				provider: resource.provider || "aliyun",
 				resourceType: resource.type,
 				format: resource.format,
-				usage: resource.usage,
+				usage: resource.usage || "",
 			},
 		}));
     
@@ -736,7 +737,7 @@ class ArtAgent {
 				artifacts,
 				checkpoint:
 					status === "paused" ? { artifacts, notes: "用户暂停" } : undefined,
-			},
+			} as unknown as JsonValue,
       timestamp: new Date().toISOString(),
 			requiresAck: true,
     };
@@ -761,15 +762,15 @@ class ArtAgent {
 			type: "art",
 			format: path.extname(resource.filePath)?.replace(".", "") || "bin",
 			url: resource.remoteUrl || resource.filePath,
-			source: "llm",
+			source: "llm" as const,
 			description: resource.description,
 			metadata: {
 				priority: resource.priority,
 				style: resource.style,
-				provider: resource.provider,
+				provider: resource.provider || "aliyun",
 				resourceType: resource.type,
 				format: resource.format,
-				usage: resource.usage,
+				usage: resource.usage || "",
 			},
 		}));
 		const message: AgentMessage = {
@@ -786,7 +787,7 @@ class ArtAgent {
 					artifacts,
 					notes,
 				},
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};

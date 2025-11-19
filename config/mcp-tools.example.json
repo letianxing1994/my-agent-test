@@ -1,0 +1,71 @@
+{
+  "tools": [
+    {
+      "type": "blender",
+      "name": "blender-main",
+      "executablePath": "C:/Program Files/Blender Foundation/Blender 4.0/blender.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/blender",
+      "autoSync": true,
+      "watchPatterns": ["*.blend", "*.fbx", "*.obj", "*.gltf", "*.png", "*.jpg"]
+    },
+    {
+      "type": "maya",
+      "name": "maya-main",
+      "executablePath": "C:/Program Files/Autodesk/Maya2024/bin/maya.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/maya",
+      "autoSync": true,
+      "watchPatterns": ["*.ma", "*.mb", "*.fbx", "*.obj"]
+    },
+    {
+      "type": "photoshop",
+      "name": "photoshop-main",
+      "executablePath": "C:/Program Files/Adobe/Adobe Photoshop 2024/Photoshop.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/photoshop",
+      "autoSync": true,
+      "watchPatterns": ["*.psd", "*.png", "*.jpg", "*.tga"]
+    },
+    {
+      "type": "unity",
+      "name": "unity-dev",
+      "executablePath": "C:/Program Files/Unity/Hub/Editor/2022.3.10f1/Editor/Unity.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/unity-project",
+      "autoSync": true,
+      "watchPatterns": [
+        "Assets/**/*.prefab",
+        "Assets/**/*.mat",
+        "Assets/**/*.unity",
+        "Assets/**/*.asset"
+      ]
+    },
+    {
+      "type": "unreal",
+      "name": "unreal-dev",
+      "executablePath": "C:/Program Files/Epic Games/UE_5.3/Engine/Binaries/Win64/UnrealEditor.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/unreal-project",
+      "autoSync": true,
+      "watchPatterns": [
+        "Content/**/*.uasset",
+        "Content/**/*.umap"
+      ]
+    },
+    {
+      "type": "reaper",
+      "name": "reaper-main",
+      "executablePath": "C:/Program Files/REAPER/reaper.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/audio",
+      "autoSync": true,
+      "watchPatterns": ["*.wav", "*.mp3", "*.ogg", "*.rpp"]
+    },
+    {
+      "type": "vscode",
+      "name": "vscode-dev",
+      "executablePath": "C:/Program Files/Microsoft VS Code/Code.exe",
+      "workingDirectory": "E:/NodeProject/my-agent-test/data/projects/project-123/code",
+      "autoSync": true,
+      "watchPatterns": ["*.ts", "*.js", "*.json", "*.yaml"]
+    }
+  ],
+  "cloudProvider": "aliyun",
+  "syncInterval": 60000,
+  "maxRetries": 3
+}

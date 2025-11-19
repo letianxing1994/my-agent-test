@@ -25,13 +25,18 @@ import {
 	type GameGenre,
 	type GameProjectConfig,
 	type JsonRecord,
+	type JsonValue,
 	MessageType,
 	type StageConfig,
 	type StagePreviewRequest,
 	type TestReport,
 	type UserInput,
 	UserInputSchema,
+	GameGenreSelectionSchema,
+	GameGenreSchema,
 } from "../types";
+// 导入路由
+import userAssetsRoutes from "./routes/userAssets";
 
 type UploadedFileInfo = {
 	filename: string;
@@ -182,6 +187,9 @@ const projectManager = new ProjectManager();
 // 创建Express应用
 const app = express();
 app.use(express.json());
+
+// 注册路由
+app.use("/api/user-assets", userAssetsRoutes);
 
 // 配置multer用于文件上传
 const upload = multer({
@@ -338,7 +346,8 @@ wss.on("connection", (ws: WebSocket) => {
       // 处理注册消息
 			if (
 				data.type === MessageType.STATUS_UPDATE &&
-				data.content?.action === "register"
+				typeof data.content === 'object' && data.content !== null && 'action' in data.content &&
+				data.content.action === "register"
 			) {
         agentId = data.senderId;
         activeAgents.set(agentId, ws);
@@ -414,13 +423,14 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 		case MessageType.USER_INPUT: {
       // 创建新项目
       const projectId = uuidv4();
+      const content = message.content as unknown as UserInput & { projectName?: string; executionMode?: ExecutionMode };
       const project: GameProjectConfig = {
         projectId,
 				projectName:
-					message.content.projectName || `游戏项目_${projectId.slice(0, 8)}`,
+					content.projectName || `游戏项目_${projectId.slice(0, 8)}`,
 				executionMode:
-					message.content.executionMode || ExecutionMode.SEQUENTIAL,
-        userInput: message.content,
+					content.executionMode || ExecutionMode.SEQUENTIAL,
+        userInput: content as UserInput,
 				status: "initialized",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -474,7 +484,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
       // 更新项目的GDD
       const projectToUpdate = projectManager.getProject(message.projectId);
       if (projectToUpdate) {
-        projectToUpdate.gdd = message.content;
+        projectToUpdate.gdd = message.content as GDD;
 				projectToUpdate.status = "planning";
         projectToUpdate.updatedAt = new Date().toISOString();
         saveProject(projectToUpdate);
@@ -491,10 +501,12 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 						status: "completed",
 						artifacts: [
 							{
+								artifactId: uuidv4(),
 								stageId: "planning",
 								type: "document",
 								format: "gdd",
 								url: path.join(projectsDir, message.projectId, "gdd.json"),
+								source: "llm" as const,
 								metadata: {
 									projectName: projectToUpdate.projectName,
 								},
@@ -557,7 +569,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
       const assetProject = projectManager.getProject(message.projectId);
 			if (!assetProject) break;
 
-			const payload = message.content as ArtifactMessage;
+			const payload = message.content as unknown as ArtifactMessage;
 			const artifacts = payload.artifacts || [];
 
 			for (const artifact of artifacts) {
@@ -600,7 +612,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 					content: summary,
 					stageId: payload.stageId,
             timestamp: new Date().toISOString(),
-					metadata: { artifacts: artifacts.length, status: payload.status },
+					metadata: { artifacts: artifacts.length, status: payload.status || "in_progress" },
 				});
 				if (followUps.length > 0) {
 					executionManager.addClarificationQuestions(
@@ -626,7 +638,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 				executionManager.recordCheckpoint(
 					message.projectId,
 					payload.stageId,
-					payload.checkpoint,
+					{ ...payload.checkpoint, timestamp: new Date().toISOString() },
 				);
 			}
 
@@ -661,17 +673,18 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 		case MessageType.COMPLETION: {
 			const completionProject = projectManager.getProject(message.projectId);
 			if (completionProject) {
+				const content = message.content as any;
 				completionProject.assets.code =
-					message.content?.outputPath || completionProject.assets.code;
+					content?.outputPath || completionProject.assets.code;
 				completionProject.updatedAt = new Date().toISOString();
 				completionProject.status = "tech";
 				saveProject(completionProject);
-				if (message.content?.outputPath) {
+				if (content?.outputPath) {
 					recordStageArtifact(
 						message.projectId,
 						"tech",
-						message.content.outputPath,
-						{ type: "code", buildId: message.content.buildId },
+						content.outputPath,
+						{ type: "code", buildId: content.buildId },
 					);
 				}
 				markStageStatus(message.projectId, "tech", "completed");
@@ -681,12 +694,14 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 						status: "completed",
 						artifacts: [
 							{
+								artifactId: uuidv4(),
 								stageId: "tech",
 								type: "code",
 								format: "build",
-								url: message.content?.outputPath || "",
+								url: content?.outputPath || "",
+								source: "llm" as const,
 								metadata: {
-									buildId: message.content?.buildId,
+									buildId: content?.buildId || "",
 								},
 							},
 						],
@@ -705,7 +720,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
       // 处理测试报告
       const testProject = projectManager.getProject(message.projectId);
       if (testProject) {
-				const testReport = message.content as TestReport;
+				const testReport = message.content as unknown as TestReport;
 				testProject.testReports.push(testReport.reportId);
         testProject.updatedAt = new Date().toISOString();
         saveProject(testProject);
@@ -721,13 +736,15 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 				if (isPreviewProject(message.projectId)) {
 					const payload: ArtifactMessage = {
 						stageId: "test",
-						status: testReport.testsFailed > 0 ? "failed" : "completed",
+						status: testReport.testsFailed > 0 ? "in_progress" : "completed",
 						artifacts: [
 							{
+								artifactId: uuidv4(),
 								stageId: "test",
 								type: "test_report",
 								format: "json",
 								url: reportPath,
+								source: "llm" as const,
 								metadata: {
 									testsFailed: testReport.testsFailed,
 									summary: testReport.summary,
@@ -767,7 +784,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 							receiverId: "tech-agent",
               projectId: message.projectId,
               type: MessageType.FEEDBACK,
-							content: testReport,
+							content: testReport as unknown as JsonValue,
               timestamp: new Date().toISOString(),
 							requiresAck: true,
             };
@@ -785,7 +802,7 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 							receiverId: "planning-agent",
               projectId: message.projectId,
               type: MessageType.FEEDBACK,
-							content: testReport,
+							content: testReport as unknown as JsonValue,
               timestamp: new Date().toISOString(),
 							requiresAck: true,
             };
@@ -807,13 +824,11 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
 					testProject.status = "completed";
           saveProject(testProject);
 					markStageStatus(message.projectId, "test", "completed");
-					executionManager.updateExecutionStatus(
-						message.projectId,
-						"completed",
-						{ reportId: message.content.reportId },
-					);
-          
-          // 通知所有相关Agent
+				executionManager.updateExecutionStatus(
+					message.projectId,
+					"completed",
+					{ reportId: (message.content as any)?.reportId || "" },
+				);          // 通知所有相关Agent
           broadcastProjectStatus(testProject);
         }
       }
@@ -1149,7 +1164,7 @@ function sendControlMessage(
 			stageId: resolvedStageId,
 			updates: payload,
 			stageConfig,
-		},
+		} as unknown as JsonValue,
 		timestamp: new Date().toISOString(),
 		requiresAck: true,
 	};
@@ -1178,7 +1193,7 @@ function sendPlanningTask(project: GameProjectConfig): void {
       userInput: project.userInput,
 			executionMode: project.executionMode,
 			stageConfig,
-    },
+    } as unknown as JsonValue,
     timestamp: new Date().toISOString(),
 		requiresAck: true,
   };
@@ -1217,7 +1232,7 @@ function sendArtTask(project: GameProjectConfig): void {
       project,
 			gdd: project.gdd,
 			stageConfig,
-    },
+    } as unknown as JsonValue,
     timestamp: new Date().toISOString(),
 		requiresAck: true,
   };
@@ -1254,7 +1269,7 @@ function sendMusicTask(project: GameProjectConfig): void {
       project,
 			gdd: project.gdd,
 			stageConfig,
-    },
+    } as unknown as JsonValue,
     timestamp: new Date().toISOString(),
 		requiresAck: true,
   };
@@ -1287,7 +1302,7 @@ function sendTechTask(project: GameProjectConfig): void {
       artAssets: project.assets.art,
 			musicAssets: project.assets.music,
 			stageConfig,
-    },
+    } as unknown as JsonValue,
     timestamp: new Date().toISOString(),
 		requiresAck: true,
   };
@@ -1319,7 +1334,7 @@ function sendTestTask(project: GameProjectConfig): void {
       project,
 			buildResult: project.assets.code,
 			stageConfig,
-    },
+    } as unknown as JsonValue,
     timestamp: new Date().toISOString(),
 		requiresAck: true,
   };
@@ -1563,7 +1578,7 @@ function broadcastProjectStatus(project: GameProjectConfig) {
 		receiverId: "broadcast",
     projectId: project.projectId,
     type: MessageType.STATUS_UPDATE,
-    content: { projectStatus: project.status, project },
+    content: { projectStatus: project.status, project } as unknown as JsonValue,
     timestamp: new Date().toISOString(),
 		requiresAck: false,
   };
@@ -1582,7 +1597,7 @@ function broadcastProjectStatus(project: GameProjectConfig) {
 app.post("/api/executions/preview", async (req, res) => {
 	try {
 		const parsed = PreviewRequestSchema.parse(req.body);
-		validatePreviewRequest(parsed);
+		validatePreviewRequest(parsed as any);
 
 		const userInput = ensureUserInput(parsed.userInput);
 		const projectId = `${PREVIEW_PREFIX}${uuidv4()}`;
@@ -1615,7 +1630,7 @@ app.post("/api/executions/preview", async (req, res) => {
 
 		const stageConfig = buildPreviewStageConfig(
 			parsed.stageId,
-			parsed.stageConfig,
+			parsed.stageConfig as any,
 		);
 
 		executionManager.createExecution(
@@ -1637,7 +1652,7 @@ app.post("/api/executions/preview", async (req, res) => {
 			projectId,
 		);
 
-		const result = await runPreviewStage(project, stageConfig, parsed);
+		const result = await runPreviewStage(project, stageConfig, parsed as any);
 
 		res.json({ success: true, data: result });
 	} catch (error) {
@@ -1661,7 +1676,7 @@ app.post("/api/executions", (req, res) => {
 	const projectId = uuidv4();
 	const userInput = ensureUserInput({
 		gameGenre: data.project.gameGenre,
-		gameType: data.project.gameGenre.primary,
+		gameType: data.project.gameGenre?.primary,
 		dimension: data.project.dimension,
 		artStyle: data.project.artStyle,
 		gameMode: data.project.gameMode,
@@ -1873,15 +1888,15 @@ app.patch("/api/executions/:executionId", (req, res) => {
 	switch (payload.action) {
 		case "pause":
 			executionManager.updateExecutionStatus(project.projectId, "paused");
-			sendControlMessage(project, payload.stageId, "pause", payload.updates);
+			sendControlMessage(project, payload.stageId, "pause", payload.updates as JsonRecord);
 			break;
 		case "resume":
 			executionManager.updateExecutionStatus(project.projectId, "running");
-			sendControlMessage(project, payload.stageId, "resume", payload.updates);
+			sendControlMessage(project, payload.stageId, "resume", payload.updates as JsonRecord);
 			break;
 		case "abort":
 			executionManager.updateExecutionStatus(project.projectId, "aborted");
-			sendControlMessage(project, payload.stageId, "abort", payload.updates);
+			sendControlMessage(project, payload.stageId, "abort", payload.updates as JsonRecord);
 			break;
 		case "update_requirements":
 			executionManager.updateExecutionConfig(
@@ -2014,7 +2029,7 @@ app.post("/api/executions/:executionId/stages/:stageId/updates", (req, res) => {
 		{
 			updatedAt: new Date().toISOString(),
 			...parsed.data,
-		},
+		} as any,
 	);
 
 	res.json({ updated: true });
@@ -2137,7 +2152,7 @@ app.post(
 			const files: Express.Multer.File[] = Array.isArray(filesInput)
 				? filesInput
 				: filesInput
-					? [filesInput as Express.Multer.File]
+					? Object.values(filesInput).flat()
 					: [];
 			const uploadedFiles: UploadedFileInfo[] = [];
 

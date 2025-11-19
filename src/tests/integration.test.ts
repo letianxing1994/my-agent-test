@@ -4,7 +4,7 @@ import type { GDD, TestReport, UserInput } from "../types";
 
 describe("A2A Game Development System Integration Tests", () => {
 	// 模拟WebSocket客户端用于测试
-	const client: WebSocket | null = null;
+	let client: WebSocket | null = null;
 	let projectId: string;
 
 	beforeAll(() => {
@@ -13,8 +13,8 @@ describe("A2A Game Development System Integration Tests", () => {
 	});
 
 	afterAll(() => {
-		if (client) {
-			client.close();
+		if (client && typeof (client as any).close === 'function') {
+			(client as any).close();
 		}
 		console.log("整合测试完成");
 	});

@@ -1,48 +1,99 @@
 {
   "planning": {
-    "provider": "TODO-planning-provider",
-    "model": "TODO-planning-model",
-    "endpoint": "https://api.todo-planning.com/v1",
-    "apiKeyEnv": "PLANNING_API_KEY",
+    "provider": "deepseek",
+    "model": "deepseek-r1",
+    "endpoint": "https://api.deepseek.com/v1",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
     "extra": {
-      "temperature": 0.3
-    }
+      "temperature": 0.3,
+      "max_tokens": 8000
+    },
+    "systemPrompt": "你是一位资深的游戏策划专家，擅长设计各类游戏的核心玩法和系统架构。你需要根据用户的需求生成详细的游戏设计文档（GDD），包括核心概念、玩法机制、系统设计、资源需求等。请确保设计的合理性、可实现性和趣味性。"
   },
   "art": {
-    "provider": "TODO-art-provider",
-    "model": "TODO-art-model",
-    "endpoint": "https://api.todo-art.com/v1",
-    "apiKeyEnv": "ART_API_KEY",
-    "extra": {
-      "stylePreset": "realistic"
+    "2d": {
+      "provider": "openai",
+      "model": "dall-e-3",
+      "endpoint": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "extra": {
+        "quality": "hd",
+        "size": "1024x1024",
+        "style": "vivid"
+      },
+      "systemPrompt": "你是一位专业的2D游戏美术设计师，擅长创建2D游戏资源。你需要生成角色精灵图（sprite）、概念原画、UI元素、场景贴图、2D特效等。请根据游戏风格（像素风、卡通、写实等）生成符合2D美术规范的高质量资源。"
+    },
+    "3d": {
+      "models": [
+        {
+          "name": "texture_generator",
+          "provider": "openai",
+          "model": "dall-e-3",
+          "endpoint": "https://api.openai.com/v1",
+          "apiKeyEnv": "OPENAI_API_KEY",
+          "purpose": "texture",
+          "extra": {
+            "quality": "hd",
+            "size": "2048x2048",
+            "style": "natural"
+          },
+          "systemPrompt": "你是专业的游戏材质贴图设计师。负责生成3D模型所需的各种贴图：漫反射贴图（Albedo）、法线贴图（Normal Map）、粗糙度贴图（Roughness）、金属度贴图（Metallic）、AO贴图等。请确保贴图无缝衔接、符合PBR材质标准。"
+        },
+        {
+          "name": "model_generator",
+          "provider": "meshy",
+          "model": "meshy-4",
+          "endpoint": "https://api.meshy.ai/v1",
+          "apiKeyEnv": "MESHY_API_KEY",
+          "purpose": "3d_model",
+          "extra": {
+            "art_style": "game_asset",
+            "output_format": "fbx",
+            "topology": "quad",
+            "poly_count": "low_poly"
+          },
+          "systemPrompt": "你是专业的3D模型生成专家。负责生成游戏角色、道具、场景物体的3D模型。模型要求：合理的拓扑结构、优化的面数、正确的UV展开、适合游戏引擎导入。支持骨骼绑定和动画。"
+        }
+      ],
+      "workflow": "sequential",
+      "systemPrompt": "你是一位专业的3D游戏美术设计师，负责完整的3D资源制作流程。你将协调使用两个AI模型：\n\n1. 【第一步】使用 DALL-E-3 生成高质量贴图（材质、法线、粗糙度等）\n2. 【第二步】使用 Meshy-4 生成3D模型，并应用第一步的贴图\n\n最终输出包含完整材质的3D游戏资源（FBX/GLB格式），可直接导入Unity/Unreal等引擎使用。"
     }
   },
   "music": {
-    "provider": "TODO-music-provider",
-    "model": "TODO-music-model",
-    "endpoint": "https://api.todo-music.com/v1",
-    "apiKeyEnv": "MUSIC_API_KEY",
+    "provider": "openai",
+    "model": "gpt-4o",
+    "endpoint": "https://api.openai.com/v1",
+    "apiKeyEnv": "OPENAI_API_KEY",
     "extra": {
-      "sampleRate": 44100
-    }
+      "temperature": 0.7,
+      "audio_format": "wav",
+      "sample_rate": 44100
+    },
+    "systemPrompt": "你是一位专业的游戏音频设计师，擅长创作游戏背景音乐和音效。你需要根据游戏类型、场景氛围生成合适的音频资源描述和参数配置。\n\n注意：当前使用文本生成音频描述，后续可接入专业音频生成API（如Suno AI、MusicGen等）。"
   },
   "tech": {
-    "provider": "TODO-tech-provider",
-    "model": "TODO-tech-model",
-    "endpoint": "https://api.todo-tech.com/v1",
-    "apiKeyEnv": "TECH_API_KEY",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4.5",
+    "endpoint": "https://api.anthropic.com/v1",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
     "extra": {
+      "temperature": 0.2,
+      "max_tokens": 16000,
       "language": "typescript"
-    }
+    },
+    "systemPrompt": "你是一位资深的游戏开发工程师，精通各种游戏引擎（Unity、Unreal、Godot、Phaser等）和编程语言。你需要根据游戏设计文档和资源，生成高质量、可运行的游戏代码，包括游戏逻辑、资源集成、构建配置等。代码应该遵循最佳实践，具有良好的可维护性。"
   },
   "test": {
-    "provider": "TODO-test-provider",
-    "model": "TODO-test-model",
-    "endpoint": "https://api.todo-test.com/v1",
-    "apiKeyEnv": "TEST_API_KEY",
+    "provider": "anthropic",
+    "model": "claude-sonnet-4.5",
+    "endpoint": "https://api.anthropic.com/v1",
+    "apiKeyEnv": "ANTHROPIC_API_KEY",
     "extra": {
+      "temperature": 0.1,
+      "max_tokens": 8000,
       "mode": "regression"
-    }
+    },
+    "systemPrompt": "你是一位专业的游戏QA测试工程师，擅长自动化测试和问题分析。你需要对游戏进行全面测试，包括功能测试、性能测试、兼容性测试等，并生成详细的测试报告和改进建议。"
   }
 }
 

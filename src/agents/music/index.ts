@@ -9,6 +9,7 @@ import {
 	type AgentArtifact,
 	type AgentMessage,
 	type GDD,
+	type JsonValue,
 	MessageType,
 	type StageConfig,
 } from "../../types";
@@ -354,7 +355,7 @@ class MusicAgent {
         case MessageType.FEEDBACK:
 					await this.processFeedback(
 						data.projectId,
-						data.content as AudioFeedback,
+						data.content as unknown as AudioFeedback,
 					);
 					break;
 
@@ -643,13 +644,13 @@ class MusicAgent {
 			type: "audio",
 			format: path.extname(resource.filePath)?.replace(".", "") || "wav",
 			url: resource.remoteUrl || resource.filePath,
-			source: "llm",
+			source: "llm" as const,
 			description: resource.description,
 			metadata: {
 				priority: resource.priority,
-				mood: resource.mood,
+				mood: resource.mood || "",
 				type: resource.type,
-				provider: resource.provider,
+				provider: resource.provider || "aliyun",
 			},
 		}));
     
@@ -664,7 +665,7 @@ class MusicAgent {
 				status,
 				artifacts,
 				checkpoint: status === "paused" ? { artifacts } : undefined,
-			},
+			} as unknown as JsonValue,
       timestamp: new Date().toISOString(),
 			requiresAck: true,
     };
@@ -689,13 +690,13 @@ class MusicAgent {
 			type: "audio",
 			format: path.extname(resource.filePath)?.replace(".", "") || "wav",
 			url: resource.remoteUrl || resource.filePath,
-			source: "llm",
+			source: "llm" as const,
 			description: resource.description,
 			metadata: {
 				priority: resource.priority,
-				mood: resource.mood,
+				mood: resource.mood || "",
 				type: resource.type,
-				provider: resource.provider,
+				provider: resource.provider || "aliyun",
 			},
 		}));
 		const message: AgentMessage = {
@@ -712,7 +713,7 @@ class MusicAgent {
 					artifacts,
 					notes,
 				},
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};

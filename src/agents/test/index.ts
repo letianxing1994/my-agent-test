@@ -10,6 +10,7 @@ import {
 	type AgentMessage,
 	type GDD,
 	type GameProjectConfig,
+	type JsonValue,
 	MessageType,
 	type StageConfig,
 	type TestReport,
@@ -427,7 +428,7 @@ class TestAgent {
 			receiverId: "a2a-server",
 			projectId,
 			type: MessageType.TEST_REPORT,
-			content: report,
+			content: report as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};
@@ -489,7 +490,7 @@ class TestAgent {
 				status,
 				artifacts,
 				checkpoint: status === "paused" ? { artifacts } : undefined,
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};

@@ -10,6 +10,7 @@ import {
 	type AgentArtifact,
 	type AgentMessage,
 	type GDD,
+	type JsonValue,
 	MessageType,
 	type StageConfig,
 } from "../../types";
@@ -230,7 +231,7 @@ export function resolveByTag(tag) {
 	}
 
 	public composeAssetManifest(artResources: ResourceReference[]) {
-		const manifest: Record<string, unknown> = {
+		const manifest: Record<string, any[]> = {
 			characters: [],
 			environments: [],
 			textures: [],
@@ -412,11 +413,11 @@ class TechAgent {
 
 			switch (data.type) {
 				case MessageType.GDD_UPDATE:
-					await this.processGDD(data.projectId, data.content);
+					await this.processGDD(data.projectId, data.content as any);
 					break;
 
 				case MessageType.ASSET_UPDATE: {
-					await this.processResourceUpdate(data.projectId, data.content);
+					await this.processResourceUpdate(data.projectId, data.content as any);
 					// 检查是否所有资源都已准备好，如果是则开始构建
 					const project = this.projects.get(data.projectId);
 					if (
@@ -431,7 +432,7 @@ class TechAgent {
 
 				case MessageType.COMPLETION:
 					// 处理构建请求
-					if (data.content?.action === "build") {
+					if (typeof data.content === 'object' && data.content && 'action' in data.content && data.content.action === "build") {
 						await this.buildProject(data.projectId);
 					}
 					break;
@@ -441,11 +442,11 @@ class TechAgent {
 					break;
 
 				case MessageType.FEEDBACK:
-					await this.processFeedback(data.projectId, data.content);
+					await this.processFeedback(data.projectId, data.content as any);
 					break;
 
 				case MessageType.CONTROL:
-					await this.handleControlMessage(data.projectId, data.content);
+					await this.handleControlMessage(data.projectId, data.content as any);
 					break;
 
 				default:
@@ -602,6 +603,16 @@ class TechAgent {
 
 		const manifest = this.aiModel.composeAssetManifest(project.artResources);
 
+		if (!project.gdd) {
+			console.error("缺少GDD，无法生成代码");
+			return;
+		}
+
+		if (!project.engine) {
+			console.error("缺少引擎信息，无法生成代码");
+			return;
+		}
+
 		// 生成游戏代码
 		const codeFiles = await this.aiModel.generateGameCode(
 			project.gdd,
@@ -639,7 +650,7 @@ class TechAgent {
 		const build: BuildSummary = {
 			projectId,
 			buildId: uuidv4(),
-			engine: project.engine,
+			engine: project.engine || "unity",
 			buildTime: new Date().toISOString(),
 			status: "success",
 			outputPath: projectDir,
@@ -681,7 +692,7 @@ class TechAgent {
 			"medium",
 			{
 				buildId: build.buildId,
-				engine: project.engine,
+				engine: project.engine || "unity",
 				buildTime: build.buildTime,
 				status: build.status,
 				resourcesCount: build.resourcesCount,
@@ -808,7 +819,7 @@ class TechAgent {
 			receiverId: "a2a-server",
 			projectId,
 			type: MessageType.COMPLETION,
-			content: build,
+			content: build as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};
@@ -862,7 +873,7 @@ class TechAgent {
 					artifacts,
 					notes,
 				},
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};
@@ -943,8 +954,14 @@ class TechAgent {
 				source: "pipeline",
 				description: `构建 ${build.buildId}`,
 				metadata: {
-					...build,
-					provider: build.provider,
+					projectId: build.projectId,
+					buildId: build.buildId,
+					engine: build.engine || "",
+					buildTime: build.buildTime,
+					status: build.status,
+					outputPath: build.outputPath,
+					buildType: build.buildType,
+					provider: build.provider || "aliyun",
 				},
 			},
 		];
@@ -959,7 +976,7 @@ class TechAgent {
 				stageId: "tech",
 				status: "completed",
 				artifacts,
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};

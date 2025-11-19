@@ -9,6 +9,8 @@ export type JsonValue =
 	  };
 export type JsonRecord = Record<string, JsonValue>;
 
+export type CloudProvider = "aliyun" | "gcp";
+
 export const GameGenreSchema = z.enum([
 	"rpg",
 	"slg",

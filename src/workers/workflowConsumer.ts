@@ -119,7 +119,7 @@ async function fetchExecution(executionId: string): Promise<ExecutionRecord> {
 	if (!response.ok) {
 		throw new Error(`fetchExecution failed: ${response.status}`);
 	}
-	return response.json();
+	return (await response.json()) as ExecutionRecord;
 }
 
 async function waitForCompletion(
@@ -206,7 +206,7 @@ async function processTask(task: WorkflowTaskMessage) {
 			finishedAt: new Date().toISOString(),
 			error:
 				finalStatus === "failed"
-					? JSON.stringify(finalExecution.issues ?? finalExecution)
+					? JSON.stringify((finalExecution as any).issues ?? finalExecution)
 					: undefined,
 			message: finalExecution.status,
 		});

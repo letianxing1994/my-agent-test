@@ -10,6 +10,7 @@ import {
 	type AgentMessage,
 	type GDD,
 	type GameGenre,
+	type JsonValue,
 	MessageType,
 	type PlanningFocusConfig,
 	type StageConfig,
@@ -586,7 +587,7 @@ class AIModel {
 			"medium",
 			{
 				gameType: gdd.primaryGenre ?? gdd.gameType,
-				feedbackType: feedback.type,
+				feedbackType: feedback.type || "",
 				optimizationTime: optimizedGDD.updatedAt,
 			},
 		);
@@ -1007,7 +1008,7 @@ class PlanningAgent {
 					artifacts,
 					notes,
 				},
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};
@@ -1039,7 +1040,7 @@ class PlanningAgent {
 				stageId: "planning",
 				status: "completed",
 				artifacts,
-			},
+			} as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};
@@ -1056,7 +1057,7 @@ class PlanningAgent {
 			receiverId: "a2a-server",
 			projectId,
 			type: MessageType.GDD_UPDATE,
-			content: gdd,
+			content: gdd as unknown as JsonValue,
 			timestamp: new Date().toISOString(),
 			requiresAck: true,
 		};
