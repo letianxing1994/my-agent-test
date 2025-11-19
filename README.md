@@ -59,10 +59,8 @@ my-agent-test/
 ├── docs/
 │   ├── architecture.md              # 系统架构
 │   ├── architecture-distributed.md  # 分布式部署
-│   └── MCP_INTEGRATION.md           # 🆕 MCP 集成指南
-├── STARTUP_GUIDE.md         # 🆕 本地启动指南
-├── FEATURE_SUMMARY.md       # 🆕 功能总结
-├── start-all.ps1            # 🆕 一键启动脚本
+│   └── MCP_INTEGRATION.md           # MCP 集成指南
+├── DEPLOYMENT.md            # 部署指南（本地/Docker/集群）
 └── package.json
 ```
 
@@ -99,25 +97,19 @@ npm install
 
 ## 5. 启动服务
 
-### 🚀 快速启动（推荐）
+详细的启动步骤请查看 **[DEPLOYMENT.md](DEPLOYMENT.md)**
 
-```powershell
-# Windows 一键启动所有服务
-./start-all.ps1
+**快速启动：**
+
+```bash
+# 启动 A2A Server
+npm start
+
+# 或使用开发模式
+npm run dev
 ```
 
-脚本会自动按顺序启动 A2A 服务器和所有 Agent，每个服务运行在独立的 PowerShell 窗口。
-
-### 手动启动
-
-1. **A2A Server（REST + SSE + WS）**
-   ```bash
-   npm run start:a2a-server
-   ```
-2. **Workflow Consumer（Kafka -> ExecutionManager）**
-   ```bash
-   npm run start:workflow-consumer
-   ```
+服务将运行在 `http://localhost:3000`
 3. **各 Agent（可并行）**
    ```bash
    npm run start:planning-agent
@@ -153,7 +145,7 @@ npm install
 | SSE 事件订阅               | `GET /api/executions/:id/events`              |
 | Agent 试跑                 | `POST /api/executions/preview`                |
 | Kafka Worker 健康检查      | `GET /worker/health`（见 `workflowConsumer`） |
-| 部署脚本                   | `deploy/distributed_deploy.sh`                |
+| 部署配置                   | `deploy/workers/Dockerfile`                   |
 
 详见 `docs/architecture-distributed.md` 中的时序 / 控制流图。
 
@@ -177,7 +169,7 @@ npm run build         # tsdown -> dist
 - **最小集群**：A2A+WorkflowConsumer 两个节点（CPU 4C+，内存 16GB），每个 Agent 独立容器。
 - **对象存储**：3D/音频走 OSS Multipart API，代码包建议 < 2GB。
 - **监控**：Kafka consumer lag、Clarification backlog、Agent WS 心跳。
-- **一键脚本**：`deploy/distributed_deploy.sh` 给出了多节点 Docker/K8s 参考拓扑。
+- **部署指南**：`DEPLOYMENT.md` 提供了完整的本地/Docker/分布式部署方案。
 
 ## 10. 常见问题
 

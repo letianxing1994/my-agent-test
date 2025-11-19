@@ -149,18 +149,14 @@ docker logs -f my-agent-test
 
 ```bash
 # 使用 docker-compose 快速部署 Kafka + Zookeeper
-cd deploy/distributed
-docker-compose -f kafka-stack.yml up -d
+# 在项目根目录创建 docker-compose-kafka.yml
+docker-compose -f docker-compose-kafka.yml up -d
 ```
 
 **Step 2: 部署 Worker 节点**
 
 ```bash
-# 方式 1：使用部署脚本
-cd deploy
-bash distributed_deploy.sh
-
-# 方式 2：手动部署每个 Agent
+# 构建 Worker 镜像
 cd deploy/workers
 
 # Planning Agent
