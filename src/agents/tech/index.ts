@@ -277,11 +277,27 @@ export function resolveByTag(tag) {
 	}
 
 	// 分析技术需求
-	analyzeTechnicalRequirements(gdd: GDD): {
+	analyzeTechnicalRequirements(
+		gdd: GDD,
+		agentMeta?: StageConfig['agentMeta'],
+	): {
 		engine: string;
 		dependencies: string[];
 	} {
 		console.log("[模型调用] 分析技术需求");
+
+		// 根据agentMeta调整技术选型策略
+		if (agentMeta?.specialization) {
+			console.log(
+				`[模型提示] 技术Agent专精 ${agentMeta.specialization} 架构`,
+			);
+			// specialization可能是：singleplayer, multiplayer, mobile等
+		}
+		if (agentMeta?.extraTraits) {
+			console.log(
+				`[模型提示] 额外专长: ${agentMeta.extraTraits}`,
+			);
+		}
 
 		// 如果GDD中已经指定了引擎，则使用指定的引擎
 		if (gdd.technicalRequirements?.engine) {
@@ -293,8 +309,11 @@ export function resolveByTag(tag) {
 			};
 		}
 
-		// 根据游戏类型和维度选择合适的引擎
+		// 根据游戏类型、维度和agent专长选择合适的引擎
 		let engine: string;
+
+		// 如果agent专精multiplayer，可能倾向于支持网络的引擎
+		const isMultiplayerFocused = agentMeta?.specialization === 'multiplayer';
 
 		if (gdd.dimension === "3d") {
 			// 3D游戏优先使用Unity或Three.js
@@ -464,10 +483,22 @@ class TechAgent {
 		const gdd: GDD = payloadData.gdd || (payload as GDD);
 		const projectMeta = payloadData.project;
 		const cloudProvider: CloudProvider = projectMeta?.cloudProvider || "aliyun";
+		const stageConfig = payloadData.stageConfig;
 
-		// 分析技术需求
+		// 从agentMeta获取技术agent的架构偏好
+		const agentMeta = stageConfig?.agentMeta;
+		if (agentMeta) {
+			console.log(
+				`技术Agent架构偏好: ${agentMeta.specialization || '通用'}`,
+			);
+			if (agentMeta.extraTraits) {
+				console.log(`额外专长: ${agentMeta.extraTraits}`);
+			}
+		}
+
+		// 分析技术需求（传递agentMeta影响架构选择）
 		const { engine, dependencies } =
-			this.aiModel.analyzeTechnicalRequirements(gdd);
+			this.aiModel.analyzeTechnicalRequirements(gdd, agentMeta);
 
 		const primaryGenre = gdd.primaryGenre ?? gdd.gameType;
 		// 从知识库搜索游戏类型相关代码示例

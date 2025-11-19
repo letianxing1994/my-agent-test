@@ -64,11 +64,26 @@ function resolveHybridGenres(userInput?: UserInput): GameGenre[] {
 
 // 模拟AI模型调用（后续可替换为真实的模型API）
 class AIModel {
-	async generateGDD(userInput: UserInput): Promise<Partial<GDD>> {
+	async generateGDD(
+		userInput: UserInput,
+		agentMeta?: StageConfig['agentMeta'],
+	): Promise<Partial<GDD>> {
 		console.log("[模型调用] 生成游戏设计文档");
 		const primaryGenre = resolvePrimaryGenre(userInput);
 		const subGenre = resolveSubGenre(userInput);
 		const hybridGenres = resolveHybridGenres(userInput);
+
+		// 根据agentMeta调整生成策略
+		if (agentMeta?.specialization) {
+			console.log(
+				`[模型提示] 策划专精于 ${agentMeta.specialization} 类型游戏设计`,
+			);
+		}
+		if (agentMeta?.extraTraits) {
+			console.log(
+				`[模型提示] 额外专长: ${agentMeta.extraTraits}`,
+			);
+		}
 
 		const codeExamples = await knowledgeBaseService.searchCodeExamples(
 			primaryGenre.toUpperCase(),
@@ -714,14 +729,30 @@ class PlanningAgent {
 		this.stageContexts.set(projectId, { userInput, stageConfig });
 		const primaryGenre = resolvePrimaryGenre(userInput);
 
-		// 搜索知识库获取相关信息
-		const query = `${primaryGenre} ${userInput.dimension} 游戏设计`;
-		const knowledgeResults = await knowledgeBaseService.searchByKeyword(query);
+		// 从agentMeta获取策划agent的专业方向和额外特点
+		const agentMeta = stageConfig?.agentMeta;
+		if (agentMeta) {
+			console.log(`策划Agent专业方向: ${agentMeta.specialization || '通用'}`);
+			if (agentMeta.extraTraits) {
+				console.log(`额外特点: ${agentMeta.extraTraits}`);
+			}
+		}
+
+		// 搜索知识库获取相关信息（结合specialization）
+		const searchKeywords = [
+			primaryGenre,
+			userInput.dimension,
+			'游戏设计',
+			agentMeta?.specialization,
+		]
+			.filter(Boolean)
+			.join(' ');
+		const knowledgeResults = await knowledgeBaseService.searchByKeyword(searchKeywords);
 
 		console.log(`获取到 ${knowledgeResults.length} 条知识库结果`);
 
-		// 生成GDD
-		const gddData = await this.aiModel.generateGDD(userInput);
+		// 生成GDD（传递agentMeta以影响生成策略）
+		const gddData = await this.aiModel.generateGDD(userInput, agentMeta);
 
 		// 构建完整的GDD
 		let gdd: GDD = {

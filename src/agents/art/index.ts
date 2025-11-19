@@ -193,9 +193,24 @@ class AIModel {
   }
   
   // 分析GDD中的美术需求
-	analyzeArtRequirements(gdd: GDD): ArtRequirement[] {
-    console.log("[模型调用] 分析美术需求");
+	analyzeArtRequirements(
+		gdd: GDD,
+		agentMeta?: StageConfig['agentMeta'],
+	): ArtRequirement[] {
+		console.log("[模型调用] 分析美术需求");
 		const primaryGenre = gdd.primaryGenre ?? gdd.gameType;
+		
+		// 根据agentMeta调整分析策略
+		if (agentMeta?.dimension) {
+			console.log(`[模型提示] 美术Agent专精 ${agentMeta.dimension} 资产制作`);
+		}
+		if (agentMeta?.specialization) {
+			console.log(
+				`[模型提示] 美术风格偏好: ${agentMeta.specialization}`,
+			);
+		}
+		if (agentMeta?.extraTraits) {
+			console.log(`[模型提示] 额外专长: ${agentMeta.extraTraits}`);
     
     // 如果GDD中已经包含美术需求，则直接返回
     if (gdd.artRequirements && gdd.artRequirements.length > 0) {
@@ -435,12 +450,31 @@ class ArtAgent {
 		const cloudProvider: CloudProvider = projectMeta?.cloudProvider || "aliyun";
 		this.stageContexts.set(projectId, { gdd, stageConfig, cloudProvider });
     
-    // 分析美术需求
-    const artRequirements = this.aiModel.analyzeArtRequirements(gdd);
+    // 从agentMeta获取美术agent的维度和风格专长
+		const agentMeta = stageConfig?.agentMeta;
+		const dimension = agentMeta?.dimension || gdd.dimension; // 优先使用agent的dimension（2d/3d）
+		const artStylePreference = agentMeta?.specialization; // 美术风格偏好：realistic/cartoon/pixel等
+		
+		if (agentMeta) {
+			console.log(`美术Agent维度: ${dimension}`);
+			console.log(`美术Agent风格专长: ${artStylePreference || '通用'}`);
+			if (agentMeta.extraTraits) {
+				console.log(`额外特点: ${agentMeta.extraTraits}`);
+			}
+		}
     
-    // 搜索知识库获取相关信息
-    const query = `${gdd.artStyle} ${gdd.dimension} 游戏美术资源生成指南`;
-		const knowledgeResults = await knowledgeBaseService.searchByKeyword(query);
+    // 分析美术需求（传入agentMeta影响生成策略）
+    const artRequirements = this.aiModel.analyzeArtRequirements(gdd, agentMeta);
+    
+    // 搜索知识库获取相关信息（结合agent的specialization）
+		const searchKeywords = [
+			artStylePreference || gdd.artStyle,
+			dimension,
+			'游戏美术资源生成指南',
+		]
+			.filter(Boolean)
+			.join(' ');
+		const knowledgeResults = await knowledgeBaseService.searchByKeyword(searchKeywords);
     
     console.log(`获取到 ${knowledgeResults.length} 条知识库结果`);
     

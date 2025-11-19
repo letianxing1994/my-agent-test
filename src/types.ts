@@ -262,6 +262,11 @@ export interface StageConfig {
 		format?: string;
 	}>;
 	planningFocus?: PlanningFocusConfig;
+	agentMeta?: {
+		dimension?: string;
+		specialization?: string;
+		extraTraits?: string;
+	};
 }
 
 export interface ExecutionConfig {
