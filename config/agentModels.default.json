@@ -21,7 +21,19 @@
         "size": "1024x1024",
         "style": "vivid"
       },
-      "systemPrompt": "你是一位专业的2D游戏美术设计师，擅长创建2D游戏资源。你需要生成角色精灵图（sprite）、概念原画、UI元素、场景贴图、2D特效等。请根据游戏风格（像素风、卡通、写实等）生成符合2D美术规范的高质量资源。"
+      "systemPrompt": "You are a professional 2D game art designer specializing in creating 2D game assets. Generate character sprites, concept art, UI elements, scene textures, and 2D effects. Adapt to game styles (pixel art, cartoon, realistic) and produce high-quality assets following 2D art standards. Supports multiple models: DALL-E-3, Midjourney, Stable Diffusion, Banana2.",
+      "fallback": {
+        "provider": "google",
+        "model": "banana2",
+        "endpoint": "https://ai.google.dev/v1",
+        "apiKeyEnv": "GOOGLE_AI_API_KEY",
+        "extra": {
+          "quality": "high",
+          "size": "1024x1024",
+          "aspectRatio": "1:1"
+        },
+        "systemPrompt": "Use Google's Banana2 model for high-quality 2D image generation with excellent text-to-image and image-to-image capabilities."
+      }
     },
     "3d": {
       "models": [
@@ -37,7 +49,18 @@
             "size": "2048x2048",
             "style": "natural"
           },
-          "systemPrompt": "你是专业的游戏材质贴图设计师。负责生成3D模型所需的各种贴图：漫反射贴图（Albedo）、法线贴图（Normal Map）、粗糙度贴图（Roughness）、金属度贴图（Metallic）、AO贴图等。请确保贴图无缝衔接、符合PBR材质标准。"
+          "systemPrompt": "Professional game texture artist. Generate various textures for 3D models: Albedo (diffuse), Normal Maps, Roughness, Metallic, AO maps, etc. Ensure seamless tiling and PBR material standards compliance. Supports DALL-E-3, Banana2, Midjourney.",
+          "fallback": {
+            "provider": "google",
+            "model": "banana2",
+            "endpoint": "https://ai.google.dev/v1",
+            "apiKeyEnv": "GOOGLE_AI_API_KEY",
+            "extra": {
+              "quality": "high",
+              "size": "2048x2048",
+              "seamless": true
+            }
+          }
         },
         {
           "name": "model_generator",
