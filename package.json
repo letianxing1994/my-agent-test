@@ -15,6 +15,7 @@
     "test:coverage": "jest --coverage",
     "start:a2a-server": "tsx --env-file=.env ./src/a2a-server/index.ts",
     "start:planning-agent": "tsx --env-file=.env ./src/agents/planning/index.ts",
+    "start:architecture-agent": "tsx --env-file=.env ./src/agents/architecture/index.ts",
     "start:art-agent": "tsx --env-file=.env ./src/agents/art/index.ts",
     "start:music-agent": "tsx --env-file=.env ./src/agents/music/index.ts",
     "start:tech-agent": "tsx --env-file=.env ./src/agents/tech/index.ts",

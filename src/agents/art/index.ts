@@ -211,6 +211,7 @@ class AIModel {
 		}
 		if (agentMeta?.extraTraits) {
 			console.log(`[模型提示] 额外专长: ${agentMeta.extraTraits}`);
+		}
     
     // 如果GDD中已经包含美术需求，则直接返回
     if (gdd.artRequirements && gdd.artRequirements.length > 0) {

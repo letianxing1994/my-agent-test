@@ -1281,6 +1281,45 @@ function sendMusicTask(project: GameProjectConfig): void {
   }
 }
 
+// 发送架构任务
+function sendArchitectureTask(project: GameProjectConfig): void {
+	if (executionManager.hasPendingClarification(project.projectId)) {
+		console.log(
+			`[orchestrator] 仍有澄清问题待回答，延迟架构阶段: ${project.projectId}`,
+		);
+		return;
+	}
+  if (!project.gdd) {
+		console.error("缺少GDD，无法创建架构任务");
+    return;
+  }
+	const stageConfig = stageConfigFor(project.projectId, "architecture");
+	markStageStatus(project.projectId, "architecture", "running");
+  
+  const architectureMessage: AgentMessage = {
+    messageId: uuidv4(),
+		senderId: "a2a-server",
+		receiverId: "architecture-agent",
+    projectId: project.projectId,
+    type: MessageType.GDD_UPDATE,
+    content: {
+      project,
+			gdd: project.gdd,
+			artAssets: project.assets.art,
+			musicAssets: project.assets.music,
+			stageConfig,
+    } as unknown as JsonValue,
+    timestamp: new Date().toISOString(),
+		requiresAck: true,
+  };
+  
+	const architectureAgent = activeAgents.get("architecture-agent");
+  if (architectureAgent && architectureAgent.readyState === WebSocket.OPEN) {
+    architectureAgent.send(JSON.stringify(architectureMessage));
+    console.log(`已发送架构任务到 Architecture Agent: ${project.projectId}`);
+  }
+}
+
 // 发送技术任务
 function sendTechTask(project: GameProjectConfig): void {
 	if (executionManager.hasPendingClarification(project.projectId)) {
@@ -1497,6 +1536,22 @@ function runPreviewStage(
 				project.userInput = ensureUserInput(payload.userInput);
 				projectManager.updateProject(project);
 				sendPlanningTask(project);
+				break;
+			case "architecture":
+				if (!payload.gdd) {
+					rejectPreviewSession(
+						project.projectId,
+						new Error("缺少GDD，无法生成架构文档"),
+					);
+					break;
+				}
+				project.gdd = payload.gdd as GDD;
+				if (payload.assets) {
+					project.assets.art = payload.assets.art || [];
+					project.assets.music = payload.assets.music || [];
+				}
+				saveProject(project);
+				sendArchitectureTask(project);
 				break;
 			case "art":
 				if (!payload.gdd) {

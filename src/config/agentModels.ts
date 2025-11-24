@@ -97,7 +97,24 @@ export function resolveModelRuntime(
 		dimension?: "2d" | "3d"; // 新增：支持美术 Agent 的 dimension
 	},
 ) {
-	const defaults = getAgentModelConfig(agentId, stageConfig?.dimension);
+	const config = getAgentModelConfig(agentId, stageConfig?.dimension);
+	
+	// 如果是 Art3DConfig，使用第一个模型的配置
+	let defaults: AgentModelDefaults;
+	if ("models" in config && Array.isArray(config.models)) {
+		const firstModel = config.models[0];
+		defaults = {
+			provider: firstModel.provider,
+			model: firstModel.model,
+			endpoint: firstModel.endpoint,
+			apiKeyEnv: firstModel.apiKeyEnv,
+			extra: firstModel.extra,
+			systemPrompt: config.systemPrompt || firstModel.systemPrompt,
+		};
+	} else {
+		defaults = config as AgentModelDefaults;
+	}
+	
 	const resolvedModel = stageConfig?.model || defaults.model;
 	const endpoint =
 		stageConfig?.tools?.endpoint ||
@@ -122,7 +139,7 @@ export function resolveModelRuntime(
 		endpoint,
 		apiKey,
 		extra: {
-			...defaults.extra,
+			...(defaults.extra || {}),
 			...(stageConfig?.tools?.extra || {}),
 		},
 	};
