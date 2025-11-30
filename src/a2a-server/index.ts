@@ -1653,7 +1653,12 @@ function broadcastProjectStatus(project: GameProjectConfig) {
 // game-factory 调用: POST /workflows/agents/:agentId/preview 或 POST /api/agents/:agentId/preview
 const handleAgentPreview = async (req: express.Request, res: express.Response) => {
 	try {
+		console.log(`[Agent Preview API] 收到请求: ${req.method} ${req.path}`);
+		console.log(`[Agent Preview API] agentId 参数:`, req.params.agentId);
+		console.log(`[Agent Preview API] 请求体:`, JSON.stringify(req.body, null, 2));
+
 		const agentId = Number.parseInt(req.params.agentId);
+		console.log(`[Agent Preview API] 解析后的 agentId: ${agentId}`);
 
 		// 🔥 agentId 到 stageId 的映射（根据 game-factory 的 agents 表）
 		const agentIdToStageId: Record<number, "planning" | "art" | "music" | "tech" | "test"> = {
@@ -1766,6 +1771,9 @@ app.post("/api/agents/:agentId/preview", handleAgentPreview);
 // 获取所有项目
 app.post("/api/executions/preview", async (req, res) => {
 	try {
+		console.log(`[原有 Preview API] 收到请求: ${req.method} ${req.path}`);
+		console.log(`[原有 Preview API] 请求体:`, JSON.stringify(req.body, null, 2));
+
 		const parsed = PreviewRequestSchema.parse(req.body);
 		validatePreviewRequest(parsed as any);
 
