@@ -81,9 +81,22 @@
 
 ---
 
+### 9. [game-factory Agent Preview API 适配](./GAME_FACTORY_AGENT_PREVIEW_API.md)
+- ✅ **新增**：支持 game-factory 的 `/workflows/agents/:agentId/preview` 调用
+- agentId 到 stageId 映射配置
+- 请求格式和故障排查
+
+**适用场景**：解决 game-factory 调用 Agent 预览接口的问题
+
+---
+
 ## 🎯 快速开始
 
-### 单 Agent 测试
+### 方式一：单 Agent 测试（推荐用于开发）
+
+**适用场景**：测试单个 Agent 的功能，快速迭代
+
+**需要启动**：仅 2 个服务（A2A Server + 目标 Agent）
 
 ```bash
 # 1. 启动服务
@@ -91,7 +104,7 @@ npm run start:a2a-server       # A2A Server
 npm run start:planning-agent   # Planning Agent
 
 # 2. 发送测试请求
-curl -X POST http://localhost:8090/api/executions/preview \
+curl -X POST http://localhost:8080/api/executions/preview \
   -H "Content-Type: application/json" \
   -d '{
     "stageId": "planning",
@@ -106,9 +119,25 @@ curl -X POST http://localhost:8090/api/executions/preview \
 cat ./data/projects/preview-*/gdd.md
 ```
 
-### 完整工作流测试
+**详细指南**：[单 Agent 测试指南](./PLANNING_AGENT_TEST_GUIDE.md)
 
-查看 [工作流图表](./WORKFLOW_DIAGRAMS.md) 了解完整流程。
+---
+
+### 方式二：完整工作流测试（用于集成测试）
+
+**适用场景**：测试多 Agent 协作、Kafka 消息队列、完整工作流
+
+**需要启动**：外部依赖 + 7 个 my-agent-test 服务
+
+```bash
+# Windows PowerShell
+.\start-full-workflow.ps1
+
+# Linux/Mac
+bash start-full-workflow.sh
+```
+
+**详细指南**：[完整工作流测试指南](./FULL_WORKFLOW_TEST_GUIDE.md)
 
 ---
 
@@ -125,7 +154,10 @@ docs/
 ├── PERSISTENCE_KEY_DESIGN.md               ← 持久化设计
 ├── GAME_PROJECT_MAPPING.md                 ← projectId 映射关系
 ├── PROJECTID_IMPLEMENTATION.md             ← projectId 实现指南
-└── PROJECTID_MAPPING_ISSUE.md              ← projectId 问题分析
+├── PROJECTID_MAPPING_ISSUE.md              ← projectId 问题分析
+├── PLANNING_AGENT_TEST_GUIDE.md            ← 单 Agent 测试指南
+├── FULL_WORKFLOW_TEST_GUIDE.md             ← 完整工作流测试指南
+└── GAME_FACTORY_AGENT_PREVIEW_API.md       ← game-factory Agent Preview 适配
 ```
 
 ---

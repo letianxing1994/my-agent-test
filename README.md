@@ -95,33 +95,52 @@ npm install
 | `OPENAI_API_KEY` 等            | 各 Agent 模型 key，可在 `config/agentModels.default.json` 调整 |
 | `MEM0_ENDPOINT`                | mem0 API（当前为 console mock，可替换）   |
 
-## 5. 启动服务
+## 5. 快速启动
 
-详细的启动步骤请查看 **[DEPLOYMENT.md](DEPLOYMENT.md)**
+### 🎯 方式一：单 Agent 测试（推荐用于开发）
 
-**快速启动：**
+**适用场景**：快速测试单个 Agent 功能
 
 ```bash
-# 启动 A2A Server
-npm start
+# 1. 启动 A2A Server
+npm run start:a2a-server
 
-# 或使用开发模式
-npm run dev
+# 2. 启动目标 Agent（如 Planning Agent）
+npm run start:planning-agent
+
+# 3. 发送测试请求
+curl -X POST http://localhost:8080/api/executions/preview \
+  -H "Content-Type: application/json" \
+  -d @test-planning-preview.sh
 ```
 
-服务将运行在 `http://localhost:3000`
-3. **各 Agent（可并行）**
-   ```bash
-   npm run start:planning-agent
-   npm run start:art-agent
-   npm run start:music-agent
-   npm run start:tech-agent
-   npm run start:test-agent
-   ```
+**详细指南**：[单 Agent 测试指南](docs/PLANNING_AGENT_TEST_GUIDE.md)
 
-> **提示：** A2A 服务器必须先启动，Agent 才能成功连接。详细配置请参考 [STARTUP_GUIDE.md](STARTUP_GUIDE.md)。
+---
 
-> 生产环境建议每个 Agent 放在独立容器/节点，并将 `A2A_SERVER_URL` 指向调度层。
+### 🚀 方式二：完整工作流（用于集成测试）
+
+**适用场景**：测试多 Agent 协作、Kafka 消息队列
+
+```bash
+# Windows PowerShell
+.\start-full-workflow.ps1
+
+# Linux/Mac
+bash start-full-workflow.sh
+```
+
+**自动完成**：
+- ✅ 启动 Kafka + ZooKeeper
+- ✅ 启动 MySQL + Redis（可选）
+- ✅ 创建必需的 Kafka Topics
+- ✅ 提供启动所有服务的指令
+
+**详细指南**：[完整工作流测试指南](docs/FULL_WORKFLOW_TEST_GUIDE.md)
+
+---
+
+> **提示**：更多启动选项和故障排查，请查看 [文档中心](docs/README.md)
 
 ## 6. 执行流程
 

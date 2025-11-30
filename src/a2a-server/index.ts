@@ -1648,6 +1648,121 @@ function broadcastProjectStatus(project: GameProjectConfig) {
 }
 
 // REST API端点
+
+// 🔥 新增：适配 game-factory 的 Agent Preview API
+// game-factory 调用: POST /workflows/agents/:agentId/preview 或 POST /api/agents/:agentId/preview
+const handleAgentPreview = async (req: express.Request, res: express.Response) => {
+	try {
+		const agentId = Number.parseInt(req.params.agentId);
+
+		// 🔥 agentId 到 stageId 的映射（根据 game-factory 的 agents 表）
+		const agentIdToStageId: Record<number, "planning" | "art" | "music" | "tech" | "test"> = {
+			1: "planning",   // Planning Agent
+			2: "planning",   // 或者根据实际 game-factory agents 表配置
+			3: "art",        // Art Agent
+			4: "music",      // Music Agent
+			5: "tech",       // Tech Agent
+			6: "test",       // Test Agent
+		};
+
+		const stageId = agentIdToStageId[agentId];
+		if (!stageId) {
+			return res.status(400).json({
+				success: false,
+				message: `未知的 agentId: ${agentId}。有效值: ${Object.keys(agentIdToStageId).join(", ")}`,
+			});
+		}
+
+		// 构建完整的 preview request（合并 stageId）
+		const previewRequest = {
+			stageId,
+			...req.body,
+		};
+
+		console.log(`[Agent Preview] agentId=${agentId} → stageId=${stageId}`);
+
+		// 调用原有的 preview 逻辑
+		const parsed = PreviewRequestSchema.safeParse(previewRequest);
+		if (!parsed.success) {
+			console.error("[Agent Preview] 验证失败:", parsed.error);
+			return res.status(400).json({
+				success: false,
+				message: "请求参数验证失败",
+				details: parsed.error.flatten(),
+			});
+		}
+
+		validatePreviewRequest(parsed.data as any);
+
+		const userInput = ensureUserInput(parsed.data.userInput);
+		const projectId = `${PREVIEW_PREFIX}${uuidv4()}`;
+		const projectName =
+			parsed.data.project?.projectName ||
+			`Preview-${stageId}-${projectId.slice(-6)}`;
+
+		const project = projectManager.createProject(
+			projectId,
+			projectName,
+			userInput,
+			ExecutionMode.SEQUENTIAL,
+		);
+		project.cloudProvider = parsed.data.cloudProvider || "aliyun";
+
+		if (parsed.data.gdd) {
+			project.gdd = parsed.data.gdd as GDD;
+		}
+		if (parsed.data.assets?.art) {
+			project.assets.art = parsed.data.assets.art;
+		}
+		if (parsed.data.assets?.music) {
+			project.assets.music = parsed.data.assets.music;
+		}
+		if (parsed.data.assets?.code) {
+			project.assets.code = parsed.data.assets.code;
+		}
+
+		projectManager.updateProject(project);
+
+		const stageConfig = buildPreviewStageConfig(
+			stageId,
+			parsed.data.stageConfig as any,
+		);
+
+		executionManager.createExecution(
+			{
+				workflowId: "preview",
+				executionMode: ExecutionMode.SEQUENTIAL,
+				cloudProvider: project.cloudProvider || "aliyun",
+				project: {
+					projectName,
+					gameGenre: userInput.gameGenre,
+					gameType: userInput.gameGenre?.primary,
+					dimension: userInput.dimension,
+					artStyle: userInput.artStyle,
+					gameMode: userInput.gameMode,
+					additionalRequirements: userInput.additionalRequirements,
+				},
+				stages: [stageConfig],
+			},
+			projectId,
+		);
+
+		const result = await runPreviewStage(project, stageConfig, parsed.data as any);
+
+		res.json({ success: true, data: result });
+	} catch (error) {
+		console.error("Agent预览失败", error);
+		res.status(400).json({
+			success: false,
+			message: error instanceof Error ? error.message : "Agent预览失败",
+		});
+	}
+};
+
+// 注册两个路由，支持 game-factory 的不同调用方式
+app.post("/workflows/agents/:agentId/preview", handleAgentPreview);
+app.post("/api/agents/:agentId/preview", handleAgentPreview);
+
 // 获取所有项目
 app.post("/api/executions/preview", async (req, res) => {
 	try {

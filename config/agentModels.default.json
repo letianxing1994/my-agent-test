@@ -3,7 +3,7 @@
     "provider": "deepseek",
     "model": "deepseek-r1",
     "endpoint": "https://api.deepseek.com/v1",
-    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "apiKeyEnv": "sk-a758bbce61254a8686231977726c5011",
     "extra": {
       "temperature": 0.3,
       "max_tokens": 8000

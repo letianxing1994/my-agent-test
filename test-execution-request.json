@@ -1,0 +1,62 @@
+{
+  "workflowId": "sequential-game-dev",
+  "executionMode": "sequential",
+  "cloudProvider": "aliyun",
+  "userId": 123,
+  "companyId": 456,
+  "projectId": "test-789",
+  "project": {
+    "projectName": "魔法世界冒险",
+    "gameGenre": {
+      "primary": "rpg",
+      "subGenre": "arpg"
+    },
+    "dimension": "3d",
+    "artStyle": "anime",
+    "gameMode": "singleplayer",
+    "additionalRequirements": "需要魔法系统、装备系统和成长系统。剧情要有三个章节，每个章节3-5个关卡。"
+  },
+  "stages": [
+    {
+      "stageId": "planning",
+      "agentId": "planning-agent",
+      "model": "gpt-4",
+      "mode": "llm+kb",
+      "planningFocus": {
+        "narrative": true,
+        "numeric": true,
+        "levelDesign": true,
+        "systemDesign": {
+          "growth": true,
+          "equipment": true,
+          "social": false,
+          "combat": true
+        }
+      }
+    },
+    {
+      "stageId": "art",
+      "agentId": "art-agent",
+      "model": "gpt-4",
+      "mode": "llm+kb"
+    },
+    {
+      "stageId": "music",
+      "agentId": "music-agent",
+      "model": "gpt-4",
+      "mode": "llm+kb"
+    },
+    {
+      "stageId": "tech",
+      "agentId": "tech-agent",
+      "model": "gpt-4",
+      "mode": "llm+kb"
+    },
+    {
+      "stageId": "test",
+      "agentId": "test-agent",
+      "model": "gpt-4",
+      "mode": "llm+kb"
+    }
+  ]
+}
