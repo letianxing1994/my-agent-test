@@ -13,6 +13,8 @@ import { z } from "zod";
 import { executionManager } from "../orchestrator/ExecutionManager";
 import { instructionOrchestrator } from "../orchestrator/InstructionOrchestrator";
 import { storageService } from "../services/storage/StorageService";
+import { taskStateManager, TaskStatus } from "../services/TaskStateManager";
+import { getAgentModelConfig, normalizeModel } from "../config/agentModels";
 // 导入共享类型
 import {
 	type AgentArtifact,
@@ -260,7 +262,8 @@ const ExecutionRequestSchema = z.object({
 	stages: z.array(StageConfigSchema).nonempty(),
 });
 
-const PreviewRequestSchema = z.object({
+// 原有格式 schema（stageId 在顶层）
+const PreviewRequestSchemaLegacy = z.object({
 	stageId: z.enum(["planning", "art", "music", "tech", "test"]),
 	cloudProvider: z.enum(["aliyun", "gcp"]).optional(),
 	project: z
@@ -280,7 +283,85 @@ const PreviewRequestSchema = z.object({
 		})
 		.optional(),
 	notes: z.string().optional(),
+	taskId: z.string().optional(),
+	callbackUrl: z.string().optional(),
+	async: z.boolean().optional(),
 });
+
+// game-factory 格式 schema（stageId 在 stage 对象中）
+const PreviewRequestSchemaGameFactory = z.object({
+	stage: z.object({
+		stageId: z.enum(["planning", "art", "music", "tech", "test"]),
+		agentId: z.string().optional(),
+		model: z.string().optional(),
+		mode: z.string().optional(),
+	}),
+	cloudProvider: z.enum(["aliyun", "gcp"]).optional(),
+	project: z
+		.object({
+			projectName: z.string().optional(),
+			description: z.string().optional(),
+		})
+		.optional(),
+	stageConfig: StageConfigSchema.partial().optional(),
+	userInput: UserInputSchema.optional(),
+	gdd: z.record(z.string(), z.unknown()).optional(),
+	assets: z
+		.object({
+			art: z.array(z.string()).optional(),
+			music: z.array(z.string()).optional(),
+			code: z.string().optional(),
+		})
+		.optional(),
+	notes: z.string().optional(),
+	taskId: z.string().optional(),
+	callbackUrl: z.string().optional(),
+	async: z.boolean().optional(),
+});
+
+// 统一的格式（用于内部处理）
+const PreviewRequestSchema = z.union([
+	PreviewRequestSchemaLegacy,
+	PreviewRequestSchemaGameFactory,
+]);
+
+// 规范化请求数据，将 game-factory 格式转换为统一格式
+function normalizePreviewRequest(data: any): z.infer<typeof PreviewRequestSchemaLegacy> {
+	// 如果是 game-factory 格式（有 stage 对象）
+	if (data.stage && data.stage.stageId) {
+		// 从 project.description 创建基本的 userInput（如果没有提供）
+		let userInput = data.userInput;
+		if (!userInput && data.project?.description) {
+			userInput = {
+				additionalRequirements: data.project.description,
+				projectName: data.project.projectName,
+			};
+		}
+
+		// 从 stage 对象中提取 stageConfig
+		const stageConfig = data.stageConfig || {
+			agentId: data.stage.agentId,
+			model: data.stage.model,
+			mode: data.stage.mode,
+		};
+
+		return {
+			stageId: data.stage.stageId,
+			cloudProvider: data.cloudProvider,
+			project: data.project,
+			stageConfig,
+			userInput,
+			gdd: data.gdd,
+			assets: data.assets,
+			notes: data.notes,
+			taskId: data.taskId,
+			callbackUrl: data.callbackUrl,
+			async: data.async,
+		};
+	}
+	// 否则已经是规范格式
+	return data;
+}
 
 type PreviewSession = {
 	stageId: string;
@@ -1422,14 +1503,44 @@ function buildPreviewStageConfig(
 	stageId: StagePreviewRequest["stageId"],
 	overrides?: Partial<StageConfig>,
 ): StageConfig {
-	const defaultModel =
+	// 从配置文件获取默认模型
+	let defaultModel = "preview-default-model"; // fallback值
+	try {
+		// 将stageId映射到agentId
+		const agentIdMap: Record<string, string> = {
+			planning: "planning",
+			art: "art",
+			music: "music",
+			tech: "tech",
+			test: "test",
+		};
+		const agentId = agentIdMap[stageId];
+		if (agentId) {
+			const config = getAgentModelConfig(agentId as any);
+			if ("model" in config) {
+				defaultModel = config.model;
+			}
+		}
+	} catch (error) {
+		console.warn(`[Config] 无法从配置文件读取${stageId}的默认模型，使用fallback`);
+	}
+
+	// 🔥 关键：标准化模型名（特别是deepseek系列）
+	let rawModel =
 		overrides?.model ||
 		process.env[`DEFAULT_MODEL_${stageId.toUpperCase()}`] ||
-		"preview-default-model";
+		defaultModel;
+
+	const finalModel = normalizeModel(rawModel);
+
+	if (rawModel !== finalModel) {
+		console.log(`[Preview] 模型名映射: ${rawModel} → ${finalModel}`);
+	}
+
 	return {
 		stageId,
 		agentId: overrides?.agentId || `${stageId}-agent`,
-		model: defaultModel,
+		model: finalModel,
 		knowledgeBase: overrides?.knowledgeBase,
 		mode: overrides?.mode || "llm+kb",
 		tools: overrides?.tools,
@@ -1652,13 +1763,15 @@ function broadcastProjectStatus(project: GameProjectConfig) {
 // 🔥 新增：适配 game-factory 的 Agent Preview API
 // game-factory 调用: POST /workflows/agents/:agentId/preview 或 POST /api/agents/:agentId/preview
 const handleAgentPreview = async (req: express.Request, res: express.Response) => {
+	const requestId = uuidv4().slice(0, 8);
 	try {
-		console.log(`[Agent Preview API] 收到请求: ${req.method} ${req.path}`);
-		console.log(`[Agent Preview API] agentId 参数:`, req.params.agentId);
-		console.log(`[Agent Preview API] 请求体:`, JSON.stringify(req.body, null, 2));
+		console.log(`\n========== [Agent Preview API - ${requestId}] 开始 ==========`);
+		console.log(`[Agent Preview API - ${requestId}] 收到请求: ${req.method} ${req.path}`);
+		console.log(`[Agent Preview API - ${requestId}] agentId 参数:`, req.params.agentId);
+		console.log(`[Agent Preview API - ${requestId}] 请求体:`, JSON.stringify(req.body, null, 2));
 
 		const agentId = Number.parseInt(req.params.agentId);
-		console.log(`[Agent Preview API] 解析后的 agentId: ${agentId}`);
+		console.log(`[Agent Preview API - ${requestId}] 解析后的 agentId: ${agentId}`);
 
 		// 🔥 agentId 到 stageId 的映射（根据 game-factory 的 agents 表）
 		const agentIdToStageId: Record<number, "planning" | "art" | "music" | "tech" | "test"> = {
@@ -1684,25 +1797,32 @@ const handleAgentPreview = async (req: express.Request, res: express.Response) =
 			...req.body,
 		};
 
-		console.log(`[Agent Preview] agentId=${agentId} → stageId=${stageId}`);
+		console.log(`[Agent Preview - ${requestId}] agentId=${agentId} → stageId=${stageId}`);
 
 		// 调用原有的 preview 逻辑
-		const parsed = PreviewRequestSchema.safeParse(previewRequest);
-		if (!parsed.success) {
-			console.error("[Agent Preview] 验证失败:", parsed.error);
+		const rawParsed = PreviewRequestSchema.safeParse(previewRequest);
+		if (!rawParsed.success) {
+			console.error(`[Agent Preview - ${requestId}] 验证失败:`, rawParsed.error);
 			return res.status(400).json({
 				success: false,
 				message: "请求参数验证失败",
-				details: parsed.error.flatten(),
+				details: rawParsed.error.flatten(),
 			});
 		}
 
-		validatePreviewRequest(parsed.data as any);
+		// 规范化为统一格式
+		const parsed = normalizePreviewRequest(rawParsed.data);
 
-		const userInput = ensureUserInput(parsed.data.userInput);
+		// 先确保 userInput 有默认值
+		parsed.userInput = ensureUserInput(parsed.userInput);
+
+		// 再进行验证
+		validatePreviewRequest(parsed as any);
+
+		const userInput = parsed.userInput;
 		const projectId = `${PREVIEW_PREFIX}${uuidv4()}`;
 		const projectName =
-			parsed.data.project?.projectName ||
+			parsed.project?.projectName ||
 			`Preview-${stageId}-${projectId.slice(-6)}`;
 
 		const project = projectManager.createProject(
@@ -1711,26 +1831,26 @@ const handleAgentPreview = async (req: express.Request, res: express.Response) =
 			userInput,
 			ExecutionMode.SEQUENTIAL,
 		);
-		project.cloudProvider = parsed.data.cloudProvider || "aliyun";
+		project.cloudProvider = parsed.cloudProvider || "aliyun";
 
-		if (parsed.data.gdd) {
-			project.gdd = parsed.data.gdd as GDD;
+		if (parsed.gdd) {
+			project.gdd = parsed.gdd as GDD;
 		}
-		if (parsed.data.assets?.art) {
-			project.assets.art = parsed.data.assets.art;
+		if (parsed.assets?.art) {
+			project.assets.art = parsed.assets.art;
 		}
-		if (parsed.data.assets?.music) {
-			project.assets.music = parsed.data.assets.music;
+		if (parsed.assets?.music) {
+			project.assets.music = parsed.assets.music;
 		}
-		if (parsed.data.assets?.code) {
-			project.assets.code = parsed.data.assets.code;
+		if (parsed.assets?.code) {
+			project.assets.code = parsed.assets.code;
 		}
 
 		projectManager.updateProject(project);
 
 		const stageConfig = buildPreviewStageConfig(
 			stageId,
-			parsed.data.stageConfig as any,
+			parsed.stageConfig as any,
 		);
 
 		executionManager.createExecution(
@@ -1752,11 +1872,14 @@ const handleAgentPreview = async (req: express.Request, res: express.Response) =
 			projectId,
 		);
 
-		const result = await runPreviewStage(project, stageConfig, parsed.data as any);
+		const result = await runPreviewStage(project, stageConfig, parsed as any);
 
+		console.log(`[Agent Preview - ${requestId}] 预览执行成功`);
+		console.log(`========== [Agent Preview API - ${requestId}] 结束 ==========\n`);
 		res.json({ success: true, data: result });
 	} catch (error) {
-		console.error("Agent预览失败", error);
+		console.error(`[Agent Preview - ${requestId}] Agent预览失败`, error);
+		console.log(`========== [Agent Preview API - ${requestId}] 失败结束 ==========\n`);
 		res.status(400).json({
 			success: false,
 			message: error instanceof Error ? error.message : "Agent预览失败",
@@ -1770,14 +1893,27 @@ app.post("/api/agents/:agentId/preview", handleAgentPreview);
 
 // 获取所有项目
 app.post("/api/executions/preview", async (req, res) => {
+	const requestId = uuidv4().slice(0, 8);
 	try {
-		console.log(`[原有 Preview API] 收到请求: ${req.method} ${req.path}`);
-		console.log(`[原有 Preview API] 请求体:`, JSON.stringify(req.body, null, 2));
+		console.log(`\n========== [Executions Preview API - ${requestId}] 开始 ==========`);
+		console.log(`[Executions Preview API - ${requestId}] 收到请求: ${req.method} ${req.path}`);
+		console.log(`[Executions Preview API - ${requestId}] 请求体:`, JSON.stringify(req.body, null, 2));
 
-		const parsed = PreviewRequestSchema.parse(req.body);
+		// 先验证请求格式（支持两种格式）
+		const rawParsed = PreviewRequestSchema.parse(req.body);
+
+		// 规范化为统一格式
+		const parsed = normalizePreviewRequest(rawParsed);
+		console.log(`[Executions Preview API - ${requestId}] 规范化后的数据:`, JSON.stringify(parsed, null, 2));
+
+		// 先确保 userInput 有默认值
+		parsed.userInput = ensureUserInput(parsed.userInput);
+		console.log(`[Executions Preview API - ${requestId}] 填充默认值后的 userInput:`, JSON.stringify(parsed.userInput, null, 2));
+
+		// 再进行验证
 		validatePreviewRequest(parsed as any);
 
-		const userInput = ensureUserInput(parsed.userInput);
+		const userInput = parsed.userInput;
 		const projectId = `${PREVIEW_PREFIX}${uuidv4()}`;
 		const projectName =
 			parsed.project?.projectName ||
@@ -1830,11 +1966,63 @@ app.post("/api/executions/preview", async (req, res) => {
 			projectId,
 		);
 
+		// 如果是异步模式，立即返回任务ID
+		if (parsed.async) {
+			const taskId = parsed.taskId || uuidv4();
+
+			// 创建任务状态
+			taskStateManager.createTask(
+				taskId,
+				projectId,
+				parsed.stageId,
+				parsed.callbackUrl,
+			);
+
+			console.log(`[Executions Preview API - ${requestId}] 异步模式，任务ID: ${taskId}`);
+			console.log(`========== [Executions Preview API - ${requestId}] 异步任务已创建 ==========\n`);
+
+			// 立即返回任务信息
+			res.json({
+				success: true,
+				async: true,
+				data: {
+					taskId,
+					projectId,
+					stageId: parsed.stageId,
+					status: "pending",
+				},
+			});
+
+			// 在后台异步执行
+			(async () => {
+				try {
+					taskStateManager.updateTaskStatus(taskId, TaskStatus.RUNNING);
+					const result = await runPreviewStage(project, stageConfig, parsed as any);
+					taskStateManager.updateTaskStatus(taskId, TaskStatus.COMPLETED);
+					taskStateManager.setTaskResult(taskId, result);
+					console.log(`[异步任务 ${taskId}] 执行成功`);
+				} catch (error) {
+					taskStateManager.updateTaskStatus(
+						taskId,
+						TaskStatus.FAILED,
+						error instanceof Error ? error.message : "执行失败",
+					);
+					console.error(`[异步任务 ${taskId}] 执行失败:`, error);
+				}
+			})();
+
+			return;
+		}
+
+		// 同步模式：等待执行完成
 		const result = await runPreviewStage(project, stageConfig, parsed as any);
 
+		console.log(`[Executions Preview API - ${requestId}] 预览执行成功`);
+		console.log(`========== [Executions Preview API - ${requestId}] 结束 ==========\n`);
 		res.json({ success: true, data: result });
 	} catch (error) {
-		console.error("执行预览失败", error);
+		console.error(`[Executions Preview API - ${requestId}] 执行预览失败`, error);
+		console.log(`========== [Executions Preview API - ${requestId}] 失败结束 ==========\n`);
 		res.status(400).json({
 			success: false,
 			message: error instanceof Error ? error.message : "执行预览失败",
@@ -2474,7 +2662,133 @@ app.get("/api/projects/:projectId/export", async (req, res) => {
 		res
 			.status(500)
 			.json({ error: "导出项目失败", details: (error as Error).message });
-  }
+	}
+});
+
+// ==================== 任务状态管理API ====================
+
+/**
+ * 获取任务状态
+ * GET /api/tasks/:taskId/status
+ */
+app.get("/api/tasks/:taskId/status", (req, res) => {
+	try {
+		const { taskId } = req.params;
+		const task = taskStateManager.getTask(taskId);
+
+		if (!task) {
+			return res.status(404).json({
+				success: false,
+				message: "任务不存在",
+			});
+		}
+
+		res.json({
+			success: true,
+			data: {
+				taskId: task.taskId,
+				projectId: task.projectId,
+				stageId: task.stageId,
+				status: task.status,
+				progress: task.progress,
+				startTime: task.startTime,
+				completeTime: task.completeTime,
+				errorMessage: task.errorMessage,
+			},
+		});
+	} catch (error) {
+		console.error("获取任务状态失败:", error);
+		res.status(500).json({
+			success: false,
+			message: "获取任务状态失败",
+			error: (error as Error).message,
+		});
+	}
+});
+
+/**
+ * 获取任务结果
+ * GET /api/tasks/:taskId/result
+ */
+app.get("/api/tasks/:taskId/result", (req, res) => {
+	try {
+		const { taskId } = req.params;
+		const task = taskStateManager.getTask(taskId);
+
+		if (!task) {
+			return res.status(404).json({
+				success: false,
+				message: "任务不存在",
+			});
+		}
+
+		if (task.status !== TaskStatus.COMPLETED) {
+			return res.status(400).json({
+				success: false,
+				message: "任务尚未完成",
+				status: task.status,
+				progress: task.progress,
+			});
+		}
+
+		res.json({
+			success: true,
+			data: {
+				taskId: task.taskId,
+				projectId: task.projectId,
+				stageId: task.stageId,
+				resultData: task.resultData,
+				completeTime: task.completeTime,
+			},
+		});
+	} catch (error) {
+		console.error("获取任务结果失败:", error);
+		res.status(500).json({
+			success: false,
+			message: "获取任务结果失败",
+			error: (error as Error).message,
+		});
+	}
+});
+
+/**
+ * 通过 projectId 获取任务状态
+ * GET /api/preview/:projectId/status
+ */
+app.get("/api/preview/:projectId/status", (req, res) => {
+	try {
+		const { projectId } = req.params;
+		const task = taskStateManager.getTaskByProjectId(projectId);
+
+		if (!task) {
+			return res.status(404).json({
+				success: false,
+				message: "任务不存在",
+			});
+		}
+
+		res.json({
+			success: true,
+			data: {
+				taskId: task.taskId,
+				projectId: task.projectId,
+				stageId: task.stageId,
+				status: task.status,
+				progress: task.progress,
+				startTime: task.startTime,
+				completeTime: task.completeTime,
+				resultData: task.resultData,
+				errorMessage: task.errorMessage,
+			},
+		});
+	} catch (error) {
+		console.error("获取预览状态失败:", error);
+		res.status(500).json({
+			success: false,
+			message: "获取预览状态失败",
+			error: (error as Error).message,
+		});
+	}
 });
 
 // 启动服务器

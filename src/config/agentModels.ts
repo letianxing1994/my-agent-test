@@ -84,9 +84,84 @@ export function getAgentModelConfig(
 // 新增：获取3D美术Agent的所有模型配置
 export function get3DArtModels(dimension?: "2d" | "3d"): MultiModelConfig[] | null {
 	if (dimension !== "3d") return null;
-	
+
 	const config = getAgentModelConfig("art", "3d") as Art3DConfig;
 	return config.models || null;
+}
+
+/**
+ * 标准化模型名称
+ * 将常见的别名映射为官方模型名
+ *
+ * 特别处理：所有包含"deepseek"的模型名都映射为deepseek-reasoner
+ */
+function normalizeModelName(modelName: string): string {
+	if (!modelName) return modelName;
+
+	const modelMap: Record<string, string> = {
+		// DeepSeek 系列 - 所有deepseek变体都映射为deepseek-reasoner
+		"deepseek-r1": "deepseek-reasoner",
+		"deepseek-r1-distill": "deepseek-reasoner",
+		"deepseek-chat": "deepseek-reasoner",
+		"deepseek": "deepseek-reasoner",
+
+		// OpenAI 系列
+		"gpt-4o": "gpt-4o",
+		"gpt-5": "gpt-5",
+
+		// Anthropic 系列
+		"claude-sonnet-4.5": "claude-sonnet-4.5",
+
+		// 图像生成
+		"dall-e-3": "dall-e-3",
+		"banana2": "banana2",
+
+		// 3D模型生成
+		"meshy-4": "meshy-4",
+	};
+
+	// 转换为小写进行匹配
+	const normalizedInput = modelName.toLowerCase().trim();
+
+	// 精确匹配
+	if (modelMap[normalizedInput]) {
+		return modelMap[normalizedInput];
+	}
+
+	// 🔥 关键：任何包含"deepseek"的都映射为deepseek-reasoner
+	if (normalizedInput.includes("deepseek")) {
+		console.log(`[Model映射] ${modelName} → deepseek-reasoner`);
+		return "deepseek-reasoner";
+	}
+
+	// 没有匹配则返回原始名称
+	return modelName;
+}
+
+/**
+ * 导出的公共函数，供其他模块使用
+ */
+export function normalizeModel(modelName: string): string {
+	return normalizeModelName(modelName);
+}
+
+/**
+ * 标准化endpoint地址
+ * 根据provider自动修正endpoint
+ */
+function normalizeEndpoint(endpoint: string | undefined, provider: string): string {
+	// DeepSeek API endpoint 应该是 https://api.deepseek.com（不带/v1）
+	if (provider === "deepseek") {
+		if (!endpoint || endpoint.includes("placeholder")) {
+			return "https://api.deepseek.com";
+		}
+		// 如果用户传了 /v1 后缀，移除它
+		if (endpoint.endsWith("/v1")) {
+			return endpoint.replace(/\/v1$/, "");
+		}
+	}
+
+	return endpoint || "https://api.placeholder-model.com/v1";
 }
 
 export function resolveModelRuntime(
@@ -115,12 +190,14 @@ export function resolveModelRuntime(
 		defaults = config as AgentModelDefaults;
 	}
 	
-	const resolvedModel = stageConfig?.model || defaults.model;
-	const endpoint =
+	const resolvedModel = normalizeModelName(stageConfig?.model || defaults.model);
+	const provider =
+		stageConfig?.tools?.provider || defaults.provider || "custom";
+	const rawEndpoint =
 		stageConfig?.tools?.endpoint ||
 		defaults.endpoint ||
-		process.env[`${agentId.toUpperCase()}_MODEL_ENDPOINT`] ||
-		"https://api.placeholder-model.com/v1";
+		process.env[`${agentId.toUpperCase()}_MODEL_ENDPOINT`];
+	const endpoint = normalizeEndpoint(rawEndpoint, provider);
 	const apiKeyEnv =
 		stageConfig?.tools?.apiKeyEnv ||
 		defaults.apiKeyEnv ||
@@ -130,8 +207,6 @@ export function resolveModelRuntime(
 		process.env[apiKeyEnv] ||
 		defaults.apiKey ||
 		"TODO_API_KEY";
-	const provider =
-		stageConfig?.tools?.provider || defaults.provider || "custom";
 
 	return {
 		provider,

@@ -17,6 +17,11 @@ import {
 	type UserInput,
 } from "../../types";
 
+// 导入服务
+import { LLMService } from "../../services/LLMService";
+import { resolveModelRuntime } from "../../config/agentModels";
+import { taskStateManager } from "../../services/TaskStateManager";
+
 interface PlanningUserInputPayload {
 	userInput: UserInput;
 	stageConfig?: StageConfig;
@@ -63,7 +68,7 @@ function resolveHybridGenres(userInput?: UserInput): GameGenre[] {
 	return userInput?.gameGenre?.hybrid ?? [];
 }
 
-// 模拟AI模型调用（后续可替换为真实的模型API）
+// AI模型调用类 - 使用配置系统
 class AIModel {
 	async generateGDD(
 		userInput: UserInput,
@@ -619,8 +624,14 @@ class AIModel {
 		userInput: UserInput,
 		agentMeta?: StageConfig['agentMeta'],
 		planningFocus?: PlanningFocusConfig,
+		stageConfig?: StageConfig,
 	): Promise<string> {
 		console.log("[模型调用] 生成 Markdown 格式的游戏设计文档");
+
+		// 获取模型配置
+		const modelConfig = resolveModelRuntime("planning", stageConfig);
+		console.log(`[配置] Provider: ${modelConfig.provider}, Model: ${modelConfig.model}`);
+		console.log(`[配置] Endpoint: ${modelConfig.endpoint}`);
 
 		const primaryGenre = resolvePrimaryGenre(userInput);
 		const subGenre = resolveSubGenre(userInput);
@@ -709,14 +720,42 @@ ${exampleGDD}
 
 直接输出 Markdown 内容，不要添加额外的解释：`;
 
-		// 注意：这里是模拟输出，实际应该调用真实的 AI API
-		// 在生产环境中，应该调用 OpenAI/DeepSeek/Claude 等 API
-		console.log("[提示] 实际生产环境应调用真实 AI API 生成 Markdown");
+		// 调用真实的 AI API 生成 Markdown
+		console.log(`[LLM调用] 使用模型 ${modelConfig.model} 生成游戏设计文档`);
 
-		// 模拟生成的 Markdown（简化版）
-		const markdown = this.generateMockMarkdown(userInput, agentMeta, planningFocus);
+		try {
+			const response = await LLMService.chat(
+				[
+					{
+						role: "user",
+						content: prompt,
+					},
+				],
+				{
+					provider: modelConfig.provider,
+					model: modelConfig.model,
+					endpoint: modelConfig.endpoint,
+					apiKey: modelConfig.apiKey,
+					maxTokens: (modelConfig.extra.max_tokens as number) || 8000,
+					temperature: (modelConfig.extra.temperature as number) || 0.7,
+					extra: modelConfig.extra,
+				},
+			);
 
-		return markdown;
+			console.log(`[LLM成功] 生成了 ${response.content.length} 字符的GDD文档`);
+			if (response.usage) {
+				console.log(`[Token使用] 输入: ${response.usage.promptTokens}, 输出: ${response.usage.completionTokens}, 总计: ${response.usage.totalTokens}`);
+			}
+
+			return response.content;
+		} catch (error) {
+			console.error("[LLM错误] 调用失败，回退到模拟生成:", error);
+			console.log("[提示] 请检查API密钥配置和网络连接");
+
+			// 如果API调用失败，回退到模拟生成
+			const markdown = this.generateMockMarkdown(userInput, agentMeta, planningFocus);
+			return markdown;
+		}
 	}
 
 	/**
@@ -1046,7 +1085,15 @@ class PlanningAgent {
 	) {
 		console.log(`开始处理项目 ${projectId} 的用户输入`);
 		this.stageContexts.set(projectId, { userInput, stageConfig });
+
+		// 获取任务状态（如果存在）
+		const task = taskStateManager.getTaskByProjectId(projectId);
 		const primaryGenre = resolvePrimaryGenre(userInput);
+
+		// 进度：10% - 开始处理
+		if (task) {
+			taskStateManager.updateTaskProgress(task.taskId, 10);
+		}
 
 		// 从agentMeta获取策划agent的专业方向和额外特点
 		const agentMeta = stageConfig?.agentMeta;
@@ -1070,13 +1117,24 @@ class PlanningAgent {
 
 		console.log(`获取到 ${knowledgeResults.length} 条知识库结果`);
 
+		// 进度：30% - 知识库搜索完成
+		if (task) {
+			taskStateManager.updateTaskProgress(task.taskId, 30);
+		}
+
 		// 🔥 新方式：生成 Markdown 格式的 GDD
 		console.log("🔥 使用新的 Markdown 格式生成 GDD");
 		const gddMarkdown = await this.aiModel.generateGDDMarkdown(
 			userInput,
 			agentMeta,
 			stageConfig?.planningFocus,
+			stageConfig, // 传递 stageConfig 以获取模型配置
 		);
+
+		// 进度：70% - GDD生成完成
+		if (task) {
+			taskStateManager.updateTaskProgress(task.taskId, 70);
+		}
 
 		// 从 Markdown 提取结构化数据（用于向后兼容）
 		const gddData = GDDMarkdownService.extractStructuredData(gddMarkdown);
@@ -1100,6 +1158,11 @@ class PlanningAgent {
 		await GDDMarkdownService.saveGDD(projectId, gdd, gddMarkdown);
 		console.log(`✅ GDD 已保存为 Markdown 格式: ./data/projects/${projectId}/gdd.md`);
 
+		// 进度：90% - GDD保存完成
+		if (task) {
+			taskStateManager.updateTaskProgress(task.taskId, 90);
+		}
+
 		// 保存到Mem0（重要信息）
 		await mem0Service.saveMemory(
 			"system",
@@ -1122,6 +1185,11 @@ class PlanningAgent {
 		// 发送GDD更新消息
 		this.sendGDDUpdate(projectId, gdd as GDD);
 		this.sendArtifactUpdate(projectId, gdd as GDD);
+
+		// 进度：100% - 全部完成
+		if (task) {
+			taskStateManager.updateTaskProgress(task.taskId, 100);
+		}
 
 		console.log(`项目 ${projectId} 的GDD生成完成`);
 	}

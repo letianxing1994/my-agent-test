@@ -65,13 +65,11 @@ export class GDDMarkdownService {
 		// 确保目录存在
 		fs.ensureDirSync(dir);
 
-		// 构建 YAML frontmatter
+		// 构建 YAML frontmatter（过滤掉 undefined 值）
 		const frontmatter: Record<string, unknown> = {
 			projectId: gdd.projectId || projectId,
 			projectName: gdd.projectName || "",
 			gameType: gdd.gameType || "",
-			primaryGenre: gdd.primaryGenre,
-			subGenre: gdd.subGenre,
 			dimension: gdd.dimension || "3d",
 			artStyle: gdd.artStyle || "",
 			gameMode: gdd.gameMode || "singleplayer",
@@ -79,7 +77,13 @@ export class GDDMarkdownService {
 			updatedAt: new Date().toISOString(),
 		};
 
-		// 添加可选字段
+		// 添加可选字段（只有在有值时才添加）
+		if (gdd.primaryGenre) {
+			frontmatter.primaryGenre = gdd.primaryGenre;
+		}
+		if (gdd.subGenre) {
+			frontmatter.subGenre = gdd.subGenre;
+		}
 		if (gdd.hybridGenres?.length) {
 			frontmatter.hybridGenres = gdd.hybridGenres;
 		}

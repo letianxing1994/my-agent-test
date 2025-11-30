@@ -1,9 +1,9 @@
 {
   "planning": {
     "provider": "deepseek",
-    "model": "deepseek-r1",
+    "model": "deepseek-reasoner",
     "endpoint": "https://api.deepseek.com/v1",
-    "apiKeyEnv": "sk-a758bbce61254a8686231977726c5011",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
     "extra": {
       "temperature": 0.3,
       "max_tokens": 8000
