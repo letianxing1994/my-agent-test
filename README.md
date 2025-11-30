@@ -11,9 +11,9 @@
 
 ## 📖 快速导航
 
-- **[部署指南](DEPLOYMENT.md)** - 本地/Docker/集群部署完整教程
-- **[架构文档](docs/architecture.md)** - 系统架构和技术细节
-- **[MCP 集成](docs/MCP_INTEGRATION.md)** - 本地工具（Blender/Unity）集成
+- **[文档中心](docs/README.md)** - 完整文档导航和快速开始
+- **[架构设计](docs/architecture-distributed.md)** - 分布式多 Agent 架构
+- **[最新改进](docs/README.md#🚀-最新改进)** - GDD Markdown 格式、持久化设计
 
 ---
 

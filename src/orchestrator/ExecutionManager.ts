@@ -78,6 +78,11 @@ export class ExecutionManager {
 		const record: ExecutionRecord = {
 			executionId,
 			projectId,
+
+			// 🔥 保存 game-factory 的核心标识（用于路径构建和数据隔离）
+			userId: request.userId,      // 来自 companies.owner_id
+			companyId: request.companyId, // 来自 games.company_id
+
 			workflowId: request.workflowId,
 			cloudProvider: request.cloudProvider,
 			executionMode: request.executionMode,

@@ -98,12 +98,23 @@ interface ExecutionStartResponse {
 async function startExecution(
 	task: WorkflowTaskMessage,
 ): Promise<ExecutionStartResponse> {
+	console.log(
+		`[Job ${task.jobId}] Starting execution for company ${task.companyId}, owner ${task.ownerId}`,
+	);
+
+	// 🔥 将 userId 和 companyId 传递给 A2A Server
+	const payload = {
+		...task.payload,
+		userId: task.ownerId, // 🔥 用户ID
+		companyId: task.companyId, // 🔥 公司ID
+	};
+
 	const response = await fetch(`${API_BASE}/executions`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
 		},
-		body: JSON.stringify(task.payload),
+		body: JSON.stringify(payload),
 	});
 
 	if (!response.ok) {

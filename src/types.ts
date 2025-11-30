@@ -283,6 +283,12 @@ export interface ExecutionRequest {
 	workflowId: string;
 	executionMode: ExecutionMode;
 	cloudProvider: "aliyun" | "gcp";
+
+	// 🔥 核心标识（从 game-factory 接收）
+	userId?: number; // 用户 ID（从 WorkflowTaskMessage.ownerId = companies.owner_id）
+	companyId?: number; // 公司 ID（从 WorkflowTaskMessage.companyId = games.company_id）
+	projectId?: string; // 🔥 游戏项目 ID（从 game-factory.games.id，必须传递以保持一致性）
+
 	project: {
 		projectName: string;
 		gameGenre?: GameGenreSelection;
@@ -359,7 +365,12 @@ export interface ClarificationState {
 
 export interface ExecutionRecord {
 	executionId: string;
-	projectId: string;
+	projectId: string; // 项目 ID（来自 game-factory.games.id）
+
+	// 🔥 核心隔离维度（用于路径构建和数据隔离）
+	userId?: number; // 用户 ID（来自 game-factory.companies.owner_id，可选用于向后兼容）
+	companyId?: number; // 公司 ID（来自 game-factory.games.company_id，元数据）
+
 	workflowId: string;
 	cloudProvider: "aliyun" | "gcp";
 	status:

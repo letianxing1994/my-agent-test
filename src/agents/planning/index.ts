@@ -43,6 +43,7 @@ interface ControlMessagePayload {
 // 导入服务
 import { knowledgeBaseService } from "../../services/KnowledgeBaseService";
 import { mem0Service } from "../../services/Mem0Service";
+import { GDDMarkdownService } from "../../services/GDDMarkdownService";
 
 const DEFAULT_GENRE: GameGenre = "rpg";
 
@@ -609,6 +610,324 @@ class AIModel {
 
 		return optimizedGDD;
 	}
+
+	/**
+	 * 生成 Markdown 格式的 GDD
+	 * 这是新的主要生成方法，返回 Markdown 格式
+	 */
+	async generateGDDMarkdown(
+		userInput: UserInput,
+		agentMeta?: StageConfig['agentMeta'],
+		planningFocus?: PlanningFocusConfig,
+	): Promise<string> {
+		console.log("[模型调用] 生成 Markdown 格式的游戏设计文档");
+
+		const primaryGenre = resolvePrimaryGenre(userInput);
+		const subGenre = resolveSubGenre(userInput);
+
+		// 读取示例模板作为参考
+		const examplePath = path.resolve("./src/templates/gdd-example.md");
+		let exampleGDD = "";
+		if (fs.existsSync(examplePath)) {
+			exampleGDD = fs.readFileSync(examplePath, "utf-8");
+		}
+
+		// 构建提示词
+		let specializationPrompt = "";
+		if (agentMeta?.specialization) {
+			specializationPrompt = `\n你专精于 ${agentMeta.specialization} 类型的游戏设计。`;
+		}
+		if (agentMeta?.extraTraits) {
+			specializationPrompt += `\n你的额外专长包括：${agentMeta.extraTraits}。`;
+		}
+
+		let focusPrompt = "";
+		if (planningFocus) {
+			const focuses: string[] = [];
+			if (planningFocus.narrative) focuses.push("叙事设计（详细的故事节拍和角色弧光）");
+			if (planningFocus.numeric) focuses.push("数值设计（详细的成长曲线和战斗公式）");
+			if (planningFocus.levelDesign) focuses.push("关卡设计（详细的关卡结构和难度曲线）");
+			if (planningFocus.systemDesign) {
+				const systems: string[] = [];
+				if (planningFocus.systemDesign.growth) systems.push("成长系统");
+				if (planningFocus.systemDesign.equipment) systems.push("装备系统");
+				if (planningFocus.systemDesign.combat) systems.push("战斗系统");
+				if (planningFocus.systemDesign.social) systems.push("社交系统");
+				if (systems.length > 0) {
+					focuses.push(`系统设计（重点：${systems.join("、")}）`);
+				}
+			}
+			if (focuses.length > 0) {
+				focusPrompt = `\n\n本次设计需要重点关注以下方面：\n${focuses.map((f, i) => `${i + 1}. ${f}`).join("\n")}`;
+			}
+		}
+
+		const prompt = `你是一位资深的游戏策划专家，擅长设计各类游戏的核心玩法和系统架构。${specializationPrompt}
+
+请根据以下用户需求，生成一份完整的游戏设计文档（GDD），以 **Markdown 格式** 输出。
+
+## 用户需求
+
+- **项目名称**: ${userInput.projectName || "待定"}
+- **游戏类型**: ${primaryGenre}${subGenre ? ` (${subGenre})` : ""}
+- **游戏维度**: ${userInput.dimension}
+- **美术风格**: ${userInput.artStyle}
+- **游戏模式**: ${userInput.gameMode}
+- **附加需求**: ${userInput.additionalRequirements || "无"}
+${focusPrompt}
+
+## 输出要求
+
+1. **格式**: 使用 Markdown 格式，包含 YAML frontmatter（元数据）
+2. **结构**: 参考以下示例文档的结构和格式
+3. **内容深度**: 提供详细的设计细节，包括：
+   - 核心概念和独特卖点
+   - 详细的玩法机制（包含实现细节）
+   - 角色设计（主角、NPC、敌人）
+   - 关卡/世界设计
+   - UI/UX 设计
+   - 美术和音频需求（使用表格）
+   - 技术需求和规格
+4. **专业性**: 确保设计的合理性、可实现性和趣味性
+5. **表格和格式**: 适当使用 Markdown 表格、代码块、列表等格式增强可读性
+
+## 参考示例
+
+以下是一个完整的 GDD Markdown 示例，请参考其格式和结构：
+
+\`\`\`markdown
+${exampleGDD}
+\`\`\`
+
+## 开始生成
+
+请基于上述需求和示例，生成一份完整的游戏设计文档。确保：
+1. 开头包含 YAML frontmatter（---包裹的元数据）
+2. 结构清晰，章节完整
+3. 内容详实，具有可执行性
+4. 格式规范，易于阅读
+
+直接输出 Markdown 内容，不要添加额外的解释：`;
+
+		// 注意：这里是模拟输出，实际应该调用真实的 AI API
+		// 在生产环境中，应该调用 OpenAI/DeepSeek/Claude 等 API
+		console.log("[提示] 实际生产环境应调用真实 AI API 生成 Markdown");
+
+		// 模拟生成的 Markdown（简化版）
+		const markdown = this.generateMockMarkdown(userInput, agentMeta, planningFocus);
+
+		return markdown;
+	}
+
+	/**
+	 * 模拟生成 Markdown（用于开发测试）
+	 * 生产环境应该调用真实的 AI API
+	 */
+	private generateMockMarkdown(
+		userInput: UserInput,
+		agentMeta?: StageConfig['agentMeta'],
+		planningFocus?: PlanningFocusConfig,
+	): string {
+		const primaryGenre = resolvePrimaryGenre(userInput);
+		const subGenre = resolveSubGenre(userInput);
+		const projectName = userInput.projectName || `${primaryGenre}游戏项目`;
+		const now = new Date().toISOString();
+
+		let markdown = `---
+projectId: "auto-generated"
+projectName: "${projectName}"
+gameType: "${primaryGenre}"
+primaryGenre: "${primaryGenre}"
+${subGenre ? `subGenre: "${subGenre}"` : ''}
+dimension: "${userInput.dimension}"
+artStyle: "${userInput.artStyle}"
+gameMode: "${userInput.gameMode}"
+createdAt: "${now}"
+updatedAt: "${now}"
+---
+
+# 游戏设计文档 (Game Design Document)
+
+**项目名称**: ${projectName}
+**游戏类型**: ${primaryGenre}${subGenre ? ` (${subGenre})` : ''}
+**目标平台**: PC, Console
+**创建日期**: ${new Date().toLocaleDateString('zh-CN')}
+
+---
+
+## 1. 核心概念 (Core Concept)
+
+本游戏是一款${userInput.dimension}${primaryGenre}游戏，采用${userInput.artStyle}美术风格。
+${userInput.additionalRequirements || '提供独特的游戏体验。'}
+
+### 1.1 游戏类型
+- **主要类型**: ${primaryGenre}
+${subGenre ? `- **次要类型**: ${subGenre}` : ''}
+
+### 1.2 美术风格
+- **维度**: ${userInput.dimension}
+- **美术风格**: ${userInput.artStyle}
+- **游戏模式**: ${userInput.gameMode}
+
+---
+
+## 2. 核心玩法机制 (Gameplay Mechanics)
+
+`;
+
+		// 根据游戏类型添加机制
+		const gameTypeConfig = this.getGameTypeConfig(primaryGenre, userInput);
+		gameTypeConfig.gameplayMechanics.forEach((mechanic, idx) => {
+			markdown += `### 2.${idx + 1} ${mechanic.name}
+
+**描述**: ${mechanic.description}
+
+**实现细节**:
+${mechanic.implementationDetails}
+
+---
+
+`;
+		});
+
+		// 添加美术需求
+		markdown += `## 6. 美术需求 (Art Requirements)
+
+| 类型 | 描述 | 数量 | 优先级 |
+|------|------|------|--------|
+| character | 主角和主要角色 | 3 | high |
+| character | NPC角色 | 5 | medium |
+| environment | 场景资源 | 3 | high |
+| ui | UI图标和界面 | 20 | medium |
+
+---
+
+`;
+
+		// 添加音频需求
+		markdown += `## 7. 音频需求 (Audio Requirements)
+
+| 类型 | 描述 | 数量 | 优先级 |
+|------|------|------|--------|
+| bgm | 背景音乐 | 5 | high |
+| sfx | 音效 | 15 | medium |
+
+---
+
+`;
+
+		// 添加技术需求
+		markdown += `## 8. 技术需求 (Technical Requirements)
+
+**游戏引擎**: ${gameTypeConfig.engine}
+**目标平台**: PC, Console
+**性能要求**: 60 FPS @ 1080p
+
+---
+
+`;
+
+		// 根据 planningFocus 添加额外章节
+		if (planningFocus?.narrative) {
+			markdown += `## 9. 故事节拍 (Story Beats)
+
+### Act 1: 开始
+
+游戏的起始阶段，介绍主角和世界观。
+
+### Act 2: 发展
+
+剧情逐渐深入，玩家面临更大挑战。
+
+### Act 3: 高潮
+
+最终决战和故事结局。
+
+---
+
+`;
+		}
+
+		if (planningFocus?.numeric) {
+			markdown += `## 10. 数值设计 (Numeric Models)
+
+### 10.1 角色成长系统
+
+**关键指标**: 经验值曲线, 属性成长
+
+**公式**:
+\`\`\`
+EXP(level) = 100 * level^1.5
+HP(level) = 100 + 10 * level
+\`\`\`
+
+---
+
+`;
+		}
+
+		markdown += `## 附录 (Appendix)
+
+### 文档元数据
+- **生成方式**: Planning Agent (AI-assisted)
+- **最后更新**: ${now}
+
+---
+
+*本文档由 my-agent-test Planning Agent 生成*
+`;
+
+		return markdown;
+	}
+
+	/**
+	 * 获取游戏类型配置（复用现有逻辑）
+	 */
+	private getGameTypeConfig(genre: GameGenre, userInput: UserInput): {
+		gameplayMechanics: Array<{
+			name: string;
+			description: string;
+			implementationDetails: string;
+		}>;
+		engine: string;
+	} {
+		const configs: Record<string, {
+			gameplayMechanics: Array<{
+				name: string;
+				description: string;
+				implementationDetails: string;
+			}>;
+			engine: string;
+		}> = {
+			rpg: {
+				gameplayMechanics: [
+					{
+						name: "角色成长",
+						description: "玩家角色通过经验值升级，提升属性",
+						implementationDetails: "设计属性系统、技能树、装备系统",
+					},
+					{
+						name: "任务系统",
+						description: "主线和支线任务推动剧情发展",
+						implementationDetails: "创建任务管理器、任务状态跟踪、奖励系统",
+					},
+				],
+				engine: userInput.dimension === "3d" ? "Unity" : "Godot",
+			},
+			shooter: {
+				gameplayMechanics: [
+					{
+						name: "射击机制",
+						description: "精确的射击系统",
+						implementationDetails: "设计弹道系统、后坐力、瞄准机制",
+					},
+				],
+				engine: userInput.dimension === "3d" ? "Unreal Engine" : "Godot",
+			},
+		};
+
+		return configs[genre] || configs.rpg;
+	}
 }
 
 // Planning Agent类
@@ -751,47 +1070,58 @@ class PlanningAgent {
 
 		console.log(`获取到 ${knowledgeResults.length} 条知识库结果`);
 
-		// 生成GDD（传递agentMeta以影响生成策略）
-		const gddData = await this.aiModel.generateGDD(userInput, agentMeta);
+		// 🔥 新方式：生成 Markdown 格式的 GDD
+		console.log("🔥 使用新的 Markdown 格式生成 GDD");
+		const gddMarkdown = await this.aiModel.generateGDDMarkdown(
+			userInput,
+			agentMeta,
+			stageConfig?.planningFocus,
+		);
 
-		// 构建完整的GDD
-		let gdd: GDD = {
+		// 从 Markdown 提取结构化数据（用于向后兼容）
+		const gddData = GDDMarkdownService.extractStructuredData(gddMarkdown);
+
+		// 构建完整的 GDD 对象
+		let gdd: Partial<GDD> = {
 			projectId,
 			projectName: userInput.projectName || `游戏项目_${projectId.slice(0, 8)}`,
 			...gddData,
+			gameType: resolvePrimaryGenre(userInput),
+			primaryGenre: resolvePrimaryGenre(userInput),
+			subGenre: resolveSubGenre(userInput),
+			dimension: userInput.dimension,
+			artStyle: userInput.artStyle,
+			gameMode: userInput.gameMode,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
-		} as GDD;
+		};
 
-		gdd = this.applyPlanningFocus(gdd, stageConfig?.planningFocus, userInput);
+		// 保存为 Markdown 格式（主存储格式）
+		await GDDMarkdownService.saveGDD(projectId, gdd, gddMarkdown);
+		console.log(`✅ GDD 已保存为 Markdown 格式: ./data/projects/${projectId}/gdd.md`);
 
 		// 保存到Mem0（重要信息）
 		await mem0Service.saveMemory(
 			"system",
 			projectId,
-			`生成了游戏设计文档(GDD)，核心概念：${gdd.coreConcept}`,
+			`生成了游戏设计文档(GDD)，核心概念：${gdd.coreConcept || '创新游戏设计'}`,
 			"design",
 			"high",
 			{
-				coreConcept: gdd.coreConcept,
-				keyMechanics: gdd.gameplayMechanics.map((m) => m.name),
-				createdAt: gdd.createdAt,
+				coreConcept: gdd.coreConcept || "",
+				keyMechanics: (gdd.gameplayMechanics?.map((m) => m.name) || []) as unknown as JsonValue,
+				createdAt: gdd.createdAt || "",
 			},
 		);
 
-		// 保存GDD到文件
-		const gddDir = path.resolve(`./data/projects/${projectId}`);
-		fs.ensureDirSync(gddDir);
-		fs.writeJSONSync(path.join(gddDir, "gdd.json"), gdd, { spaces: 2 });
-
 		if (this.pausedProjects.has(projectId)) {
-			this.sendCheckpoint(projectId, gdd);
+			this.sendCheckpoint(projectId, gdd as GDD);
 			return;
 		}
 
 		// 发送GDD更新消息
-		this.sendGDDUpdate(projectId, gdd);
-		this.sendArtifactUpdate(projectId, gdd);
+		this.sendGDDUpdate(projectId, gdd as GDD);
+		this.sendArtifactUpdate(projectId, gdd as GDD);
 
 		console.log(`项目 ${projectId} 的GDD生成完成`);
 	}
@@ -1046,18 +1376,41 @@ class PlanningAgent {
 		this.ws.send(JSON.stringify(message));
 	}
 
-	private sendArtifactUpdate(projectId: string, gdd: GDD) {
+	private sendArtifactUpdate(projectId: string, gdd: GDD | Partial<GDD>) {
 		if (!this.ws) return;
-		const gddPath = path.resolve(`./data/projects/${projectId}/gdd.json`);
+
+		const gddMdPath = path.resolve(`./data/projects/${projectId}/gdd.md`);
+		const gddJsonPath = path.resolve(`./data/projects/${projectId}/gdd.json`);
+
 		const artifacts: AgentArtifact[] = [
+			// 主要格式：Markdown
+			{
+				artifactId: uuidv4(),
+				stageId: "planning",
+				type: "document",
+				format: "gdd.md",
+				url: gddMdPath,
+				source: "llm",
+				description: `${gdd.coreConcept || gdd.projectName || '游戏设计文档'} (Markdown 格式)`,
+				metadata: {
+					format: "markdown",
+					purpose: "human-readable",
+					hasYAMLFrontmatter: true,
+				},
+			},
+			// 兼容格式：JSON
 			{
 				artifactId: uuidv4(),
 				stageId: "planning",
 				type: "document",
 				format: "gdd.json",
-				url: gddPath,
+				url: gddJsonPath,
 				source: "llm",
-				description: gdd.coreConcept,
+				description: `${gdd.coreConcept || gdd.projectName || '游戏设计文档'} (JSON 格式 - 向后兼容)`,
+				metadata: {
+					format: "json",
+					purpose: "machine-readable",
+				},
 			},
 		];
 

@@ -1728,7 +1728,22 @@ app.post("/api/executions", (req, res) => {
 	}
 
 	const data = parsed.data as ExecutionRequest;
-	const projectId = uuidv4();
+
+	// 🔥 优先使用 game-factory 的 projectId（games.id）
+	// 如果没有传递，才自动生成（向后兼容）
+	const projectId = data.projectId || uuidv4();
+
+	if (!data.projectId) {
+		console.warn(
+			"⚠️ ExecutionRequest 缺少 projectId。" +
+			"建议 game-factory 传递 games.id 作为 projectId 以保持一致性。"
+		);
+	} else {
+		console.log(
+			`✅ 使用 game-factory 的 projectId: ${data.projectId} (games.id)`
+		);
+	}
+
 	const userInput = ensureUserInput({
 		gameGenre: data.project.gameGenre,
 		gameType: data.project.gameGenre?.primary,
