@@ -16,10 +16,11 @@
         ↓                                   ┌──────────────────┐
   ┌──────────┐                             │  My-Agent-Test   │
   │  定时刷新  │                             │  A2A Server      │
-  │  进度条   │ <─────────────────────────  │                  │
-  └──────────┘   4. 回调状态更新            │  - 创建任务状态  │
-                    /api/preview-tasks/     │  - 执行Agent     │
-                    :taskId/callback        │  - 更新进度      │
+  │  进度条   │ <─────────────────────────  │  (port 8080)     │
+  └──────────┘   4. 回调状态更新            │                  │
+                    /api/preview-tasks/     │  - 创建任务状态  │
+                    :taskId/callback        │  - 执行Agent     │
+                    (to port 4000)          │  - 更新进度      │
                                             │  - 回调通知      │
                                             └──────────────────┘
                                                      │
@@ -30,6 +31,8 @@
                                             │  10% → 30% → ... │
                                             └──────────────────┘
 ```
+
+**注意**：game-factory backend 默认运行在 **端口 4000**，my-agent-test 运行在端口 8080。
 
 ## 数据库表结构
 
@@ -194,7 +197,7 @@ Content-Type: application/json
   "cloudProvider": "aliyun",
   "async": true,  // 启用异步模式
   "taskId": "task_1234567890_abc123",  // game-factory 生成的任务ID
-  "callbackUrl": "http://localhost:3000/api/preview-tasks/task_1234567890_abc123/callback"
+  "callbackUrl": "http://localhost:4000/api/preview-tasks/task_1234567890_abc123/callback"
 }
 ```
 
@@ -274,7 +277,7 @@ npm run dev
 ```bash
 cd /e/NodeProject/game-factory/backend
 npm run dev
-# 应该在 http://localhost:3000 启动
+# 应该在 http://localhost:4000 启动
 ```
 
 4. **启动 Planning Agent**
@@ -287,7 +290,7 @@ npx tsx src/agents/planning/index.ts
 
 ```bash
 # 1. 登录获取 token（假设你已经有用户）
-curl -X POST http://localhost:3000/api/auth/login \
+curl -X POST http://localhost:4000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
@@ -297,7 +300,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 # 保存返回的 token
 
 # 2. 创建异步预览任务
-curl -X POST http://localhost:3000/api/preview-tasks \
+curl -X POST http://localhost:4000/api/preview-tasks \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -318,7 +321,7 @@ curl -X POST http://localhost:3000/api/preview-tasks \
 ```bash
 # 持续查询任务状态（替换 YOUR_TOKEN 和 TASK_ID）
 while true; do
-  curl -X GET http://localhost:3000/api/preview-tasks/TASK_ID \
+  curl -X GET http://localhost:4000/api/preview-tasks/TASK_ID \
     -H "Authorization: Bearer YOUR_TOKEN"
   echo ""
   sleep 5
@@ -329,11 +332,11 @@ done
 
 ```bash
 # 查看所有任务
-curl -X GET http://localhost:3000/api/preview-tasks \
+curl -X GET http://localhost:4000/api/preview-tasks \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # 只查看运行中的任务
-curl -X GET "http://localhost:3000/api/preview-tasks?status=running" \
+curl -X GET "http://localhost:4000/api/preview-tasks?status=running" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -491,7 +494,7 @@ function TaskList() {
 ```bash
 # 检查服务状态
 curl http://localhost:8080/health
-curl http://localhost:3000/health
+curl http://localhost:4000/health
 
 # 检查 Planning Agent 是否在运行
 ps aux | grep planning
@@ -507,7 +510,7 @@ ps aux | grep planning
 cat /e/NodeProject/game-factory/backend/.env | grep BACKEND_URL
 
 # 应该设置为
-BACKEND_URL=http://localhost:3000
+BACKEND_URL=http://localhost:4000
 ```
 
 ### 问题 3: 数据库连接失败
