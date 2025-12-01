@@ -3,6 +3,8 @@
  * 用于追踪和管理 Agent 预览任务的状态和进度
  */
 
+import { EventEmitter } from "node:events";
+
 export enum TaskStatus {
 	PENDING = "pending",
 	RUNNING = "running",
@@ -28,8 +30,12 @@ export interface TaskState {
 	callbackUrl?: string; // game-factory 的回调地址
 }
 
-class TaskStateManager {
+class TaskStateManager extends EventEmitter {
 	private tasks: Map<string, TaskState> = new Map();
+
+	constructor() {
+		super();
+	}
 
 	/**
 	 * 创建新任务
@@ -96,6 +102,9 @@ class TaskStateManager {
 
 		console.log(`[TaskState] 任务 ${taskId} 状态更新: ${status}`);
 
+		// 发射事件，通知所有订阅者（SSE 连接）
+		this.emit("taskUpdate", taskId, task);
+
 		// 触发回调
 		this.notifyCallback(task);
 	}
@@ -112,6 +121,9 @@ class TaskStateManager {
 
 		task.progress = Math.max(0, Math.min(100, progress));
 		console.log(`[TaskState] 任务 ${taskId} 进度: ${task.progress}%`);
+
+		// 发射事件，通知所有订阅者（SSE 连接）
+		this.emit("taskUpdate", taskId, task);
 
 		// 定期回调（每10%）
 		if (task.progress % 10 === 0) {
@@ -149,6 +161,14 @@ class TaskStateManager {
 			return;
 		}
 
+		// 验证 callbackUrl 格式
+		try {
+			new URL(task.callbackUrl);
+		} catch (error) {
+			console.warn(`[TaskState] 无效的回调URL: ${task.callbackUrl}`);
+			return;
+		}
+
 		try {
 			const response = await fetch(task.callbackUrl, {
 				method: "POST",
@@ -164,17 +184,34 @@ class TaskStateManager {
 					resultData: task.resultData,
 					errorMessage: task.errorMessage,
 				}),
+				// 添加超时控制
+				signal: AbortSignal.timeout(5000), // 5秒超时
 			});
 
 			if (!response.ok) {
-				console.error(
+				console.warn(
 					`[TaskState] 回调失败: ${task.callbackUrl}, status: ${response.status}`,
 				);
 			} else {
 				console.log(`[TaskState] 回调成功: ${task.taskId}`);
 			}
 		} catch (error) {
-			console.error(`[TaskState] 回调异常: ${task.callbackUrl}`, error);
+			// 降低错误级别，避免干扰主流程
+			if (error instanceof Error && error.name === 'AbortError') {
+				console.warn(`[TaskState] 回调超时: ${task.callbackUrl}`);
+			} else if (error instanceof Error && 'cause' in error) {
+				const cause = error.cause as any;
+				if (cause?.code === 'ECONNREFUSED') {
+					console.warn(
+						`[TaskState] 回调服务未运行: ${task.callbackUrl}`,
+						`(这在开发环境中是正常的，如果不需要回调可以忽略此警告)`
+					);
+				} else {
+					console.warn(`[TaskState] 回调异常: ${task.callbackUrl}`, error.message);
+				}
+			} else {
+				console.warn(`[TaskState] 回调异常: ${task.callbackUrl}`, error);
+			}
 		}
 	}
 

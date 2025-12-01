@@ -367,11 +367,13 @@ type PreviewSession = {
 	stageId: string;
 	resolve: (payload: ArtifactMessage) => void;
 	reject: (error: Error) => void;
-	timeout: NodeJS.Timeout;
+	timeout: NodeJS.Timeout | null; // null 表示无超时
 };
 
 const previewSessions = new Map<string, PreviewSession>();
-const PREVIEW_TIMEOUT_MS = Number(process.env.PREVIEW_TIMEOUT_MS || "120000");
+// 默认 30 分钟超时，设置为 0 表示无限等待
+// 大模型调用通常需要较长时间，建议设置为 0 或很大的值
+const PREVIEW_TIMEOUT_MS = Number(process.env.PREVIEW_TIMEOUT_MS || "0");
 
 // 创建HTTP服务器
 const server = http.createServer(app);
@@ -1594,7 +1596,9 @@ function resolvePreviewSession(projectId: string, payload: ArtifactMessage) {
 	if (session.stageId !== payload.stageId) {
 		return false;
 	}
-	clearTimeout(session.timeout);
+	if (session.timeout) {
+		clearTimeout(session.timeout);
+	}
 	previewSessions.delete(projectId);
 	session.resolve(payload);
 	cleanupPreviewResources(projectId);
@@ -1604,7 +1608,9 @@ function resolvePreviewSession(projectId: string, payload: ArtifactMessage) {
 function rejectPreviewSession(projectId: string, error: Error) {
 	const session = previewSessions.get(projectId);
 	if (!session) return;
-	clearTimeout(session.timeout);
+	if (session.timeout) {
+		clearTimeout(session.timeout);
+	}
 	previewSessions.delete(projectId);
 	session.reject(error);
 	cleanupPreviewResources(projectId);
@@ -1624,9 +1630,17 @@ function runPreviewStage(
 		if (previewSessions.has(project.projectId)) {
 			previewSessions.delete(project.projectId);
 		}
-		const timeout = setTimeout(() => {
-			rejectPreviewSession(project.projectId, new Error("预览超时"));
-		}, PREVIEW_TIMEOUT_MS);
+
+		// 如果 PREVIEW_TIMEOUT_MS 为 0，表示无限等待（不设置超时）
+		let timeout: NodeJS.Timeout | null = null;
+		if (PREVIEW_TIMEOUT_MS > 0) {
+			timeout = setTimeout(() => {
+				rejectPreviewSession(project.projectId, new Error("预览超时"));
+			}, PREVIEW_TIMEOUT_MS);
+			console.log(`[Preview] 设置超时: ${PREVIEW_TIMEOUT_MS}ms (${PREVIEW_TIMEOUT_MS / 60000} 分钟)`);
+		} else {
+			console.log(`[Preview] 无超时限制 - 将一直等待 Agent 完成任务`);
+		}
 
 		previewSessions.set(project.projectId, {
 			stageId: stageConfig.stageId,
@@ -2667,8 +2681,122 @@ app.get("/api/projects/:projectId/export", async (req, res) => {
 
 // ==================== 任务状态管理API ====================
 
+// 存储 SSE 连接
+const sseClients = new Map<string, Express.Response[]>();
+
 /**
- * 获取任务状态
+ * SSE 端点 - 订阅任务状态更新（实时推送）
+ * GET /api/tasks/:taskId/events
+ *
+ * 使用方式：
+ * const eventSource = new EventSource(`http://localhost:8080/api/tasks/${taskId}/events`);
+ * eventSource.onmessage = (event) => {
+ *   const data = JSON.parse(event.data);
+ *   console.log('任务状态:', data.task);
+ * };
+ */
+app.get("/api/tasks/:taskId/events", (req, res) => {
+	const { taskId } = req.params;
+
+	// 设置 SSE 响应头
+	res.setHeader("Content-Type", "text/event-stream");
+	res.setHeader("Cache-Control", "no-cache");
+	res.setHeader("Connection", "keep-alive");
+	res.setHeader("Access-Control-Allow-Origin", "*");
+	res.flushHeaders();
+
+	// 添加到客户端列表
+	if (!sseClients.has(taskId)) {
+		sseClients.set(taskId, []);
+	}
+	const clients = sseClients.get(taskId)!;
+	clients.push(res);
+
+	console.log(`[SSE] 客户端订阅任务: ${taskId}, 当前订阅数: ${clients.length}`);
+
+	// 立即发送当前状态（避免前端等待第一次更新）
+	const task = taskStateManager.getTask(taskId);
+	if (task) {
+		const eventData = JSON.stringify({
+			type: "initial",
+			task: {
+				taskId: task.taskId,
+				projectId: task.projectId,
+				stageId: task.stageId,
+				status: task.status,
+				progress: task.progress,
+				startTime: task.startTime,
+				completeTime: task.completeTime,
+				errorMessage: task.errorMessage,
+			},
+		});
+		res.write(`data: ${eventData}\n\n`);
+	} else {
+		res.write(`data: ${JSON.stringify({ type: "error", message: "任务不存在" })}\n\n`);
+		res.end();
+		return;
+	}
+
+	// 客户端断开连接时清理
+	req.on("close", () => {
+		const clients = sseClients.get(taskId);
+		if (clients) {
+			const index = clients.indexOf(res);
+			if (index > -1) {
+				clients.splice(index, 1);
+			}
+			if (clients.length === 0) {
+				sseClients.delete(taskId);
+			}
+			console.log(`[SSE] 客户端断开任务: ${taskId}, 剩余订阅数: ${clients.length}`);
+		}
+	});
+});
+
+/**
+ * 广播任务状态更新到所有订阅的 SSE 客户端
+ */
+function broadcastTaskUpdate(taskId: string, task: any) {
+	const clients = sseClients.get(taskId);
+	if (!clients || clients.length === 0) {
+		return;
+	}
+
+	const eventData = JSON.stringify({
+		type: "update",
+		task: {
+			taskId: task.taskId,
+			projectId: task.projectId,
+			stageId: task.stageId,
+			status: task.status,
+			progress: task.progress,
+			startTime: task.startTime,
+			completeTime: task.completeTime,
+			resultData: task.resultData,
+			errorMessage: task.errorMessage,
+		},
+	});
+
+	// 推送给所有订阅的客户端
+	clients.forEach((client, index) => {
+		try {
+			client.write(`data: ${eventData}\n\n`);
+		} catch (error) {
+			console.error(`[SSE] 推送失败，移除客户端 ${index}:`, error);
+			clients.splice(index, 1);
+		}
+	});
+
+	console.log(`[SSE] 任务 ${taskId} 状态已推送给 ${clients.length} 个客户端`);
+}
+
+// 监听 TaskStateManager 的事件，自动推送给 SSE 客户端
+taskStateManager.on("taskUpdate", (taskId: string, task: any) => {
+	broadcastTaskUpdate(taskId, task);
+});
+
+/**
+ * 获取任务状态（用于手动刷新）
  * GET /api/tasks/:taskId/status
  */
 app.get("/api/tasks/:taskId/status", (req, res) => {
