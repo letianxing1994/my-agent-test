@@ -49,8 +49,16 @@ export class ReActPlanningAgent {
   private userInputQueue: Map<string, (input: string) => void> = new Map();
 
   // 配置
-  private maxIterations = 50; // 最大迭代次数
+  private maxIterations = 25; // 最大迭代次数（降低以避免无限循环）
+  private maxExecutionTime = 30 * 60 * 1000; // 最大执行时间：30分钟
+  private maxConsecutiveFailures = 3; // 最大连续失败次数
+  private stagnationThreshold = 5; // 进度停滞阈值
   private thoughtStreamEnabled = true; // 是否启用思考流
+
+  // 收敛追踪
+  private consecutiveFailures = 0;
+  private stagnationCount = 0;
+  private lastProgress = 0;
 
   constructor() {
     this.serverUrl = process.env.A2A_SERVER_URL || "ws://localhost:8080";
@@ -168,6 +176,11 @@ export class ReActPlanningAgent {
     this.iterationCount = 0;
     this.startTime = new Date();
 
+    // 重置收敛追踪变量
+    this.consecutiveFailures = 0;
+    this.stagnationCount = 0;
+    this.lastProgress = 0;
+
     await this.streamThought(`🚀 开始执行 ReAct 循环式策划任务\n项目: ${userInput.projectName}\n类型: ${userInput.dimension} ${userInput.gameGenre?.primary || '未指定'}`);
 
     // 初始化上下文
@@ -221,6 +234,13 @@ export class ReActPlanningAgent {
       this.currentContext.taskMeta.iterationCount = this.iterationCount;
 
       await this.streamThought(`\n\n━━━ 迭代 #${this.iterationCount} 开始 ━━━`);
+
+      // 检查收敛条件
+      const shouldStop = await this.checkConvergence();
+      if (shouldStop.stop) {
+        await this.streamThought(`⛔ 收敛检查失败: ${shouldStop.reason}`);
+        break;
+      }
 
       const iterationStart = Date.now();
 
@@ -276,6 +296,21 @@ export class ReActPlanningAgent {
           currentGoal: plan.currentSubGoal.name,
           iteration: this.iterationCount,
         });
+
+        // 更新收敛追踪
+        if (actionResult.success) {
+          this.consecutiveFailures = 0; // 重置连续失败计数
+        } else {
+          this.consecutiveFailures++;
+        }
+
+        // 检查进度停滞
+        if (currentProgress === this.lastProgress) {
+          this.stagnationCount++;
+        } else {
+          this.stagnationCount = 0;
+          this.lastProgress = currentProgress;
+        }
 
         await this.streamThought(
           `✅ 迭代 #${this.iterationCount} 完成 (${iterationDuration}ms)\n` +
@@ -978,6 +1013,42 @@ export class ReActPlanningAgent {
       default:
         console.log(`[ReAct Planning Agent] 未知控制指令: ${content.action}`);
     }
+  }
+
+  /**
+   * 收敛检查：防止无限循环
+   */
+  private async checkConvergence(): Promise<{ stop: boolean; reason: string }> {
+    if (!this.startTime) {
+      return { stop: false, reason: "" };
+    }
+
+    // 1. 检查执行时间
+    const elapsed = Date.now() - this.startTime.getTime();
+    if (elapsed > this.maxExecutionTime) {
+      return {
+        stop: true,
+        reason: `达到最大执行时间 (${this.maxExecutionTime / 60000} 分钟)`,
+      };
+    }
+
+    // 2. 检查连续失败次数
+    if (this.consecutiveFailures >= this.maxConsecutiveFailures) {
+      return {
+        stop: true,
+        reason: `连续失败 ${this.maxConsecutiveFailures} 次，可能存在系统性问题`,
+      };
+    }
+
+    // 3. 检查进度停滞
+    if (this.stagnationCount >= this.stagnationThreshold) {
+      return {
+        stop: true,
+        reason: `进度停滞 ${this.stagnationThreshold} 次迭代，任务可能陷入死循环`,
+      };
+    }
+
+    return { stop: false, reason: "" };
   }
 
   /**
