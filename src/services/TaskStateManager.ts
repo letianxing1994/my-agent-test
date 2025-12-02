@@ -8,6 +8,7 @@ import { EventEmitter } from "node:events";
 export enum TaskStatus {
 	PENDING = "pending",
 	RUNNING = "running",
+	IN_PROGRESS = "in_progress", // 新增：用于 ReAct Agent
 	COMPLETED = "completed",
 	FAILED = "failed",
 }
@@ -28,6 +29,16 @@ export interface TaskState {
 	};
 	errorMessage?: string;
 	callbackUrl?: string; // game-factory 的回调地址
+
+	// ReAct Planning Agent 扩展字段
+	metadata?: {
+		phase?: string;
+		currentGoal?: string;
+		iteration?: number;
+		awaitingUserInput?: boolean;
+		question?: string;
+		[key: string]: unknown;
+	};
 }
 
 class TaskStateManager extends EventEmitter {
@@ -81,7 +92,7 @@ class TaskStateManager extends EventEmitter {
 	/**
 	 * 更新任务状态
 	 */
-	updateTaskStatus(taskId: string, status: TaskStatus, errorMessage?: string): void {
+	updateTaskStatus(taskId: string, status: TaskStatus, metadata?: any): void {
 		const task = this.tasks.get(taskId);
 		if (!task) {
 			console.warn(`[TaskState] 任务不存在: ${taskId}`);
@@ -96,14 +107,24 @@ class TaskStateManager extends EventEmitter {
 			task.completeTime = new Date();
 			task.progress = status === TaskStatus.COMPLETED ? 100 : task.progress;
 		}
-		if (errorMessage) {
-			task.errorMessage = errorMessage;
+
+		// 更新元数据
+		if (metadata) {
+			if (typeof metadata === "string") {
+				// 兼容旧的错误消息参数
+				task.errorMessage = metadata;
+			} else {
+				task.metadata = { ...task.metadata, ...metadata };
+				if (metadata.errorMessage) {
+					task.errorMessage = metadata.errorMessage;
+				}
+			}
 		}
 
 		console.log(`[TaskState] 任务 ${taskId} 状态更新: ${status}`);
 
 		// 发射事件，通知所有订阅者（SSE 连接）
-		this.emit("taskUpdate", taskId, task);
+		this.emit("taskUpdate", { taskId, task });
 
 		// 触发回调
 		this.notifyCallback(task);
@@ -112,7 +133,7 @@ class TaskStateManager extends EventEmitter {
 	/**
 	 * 更新任务进度
 	 */
-	updateTaskProgress(taskId: string, progress: number): void {
+	updateTaskProgress(taskId: string, progress: number, metadata?: any): void {
 		const task = this.tasks.get(taskId);
 		if (!task) {
 			console.warn(`[TaskState] 任务不存在: ${taskId}`);
@@ -120,10 +141,16 @@ class TaskStateManager extends EventEmitter {
 		}
 
 		task.progress = Math.max(0, Math.min(100, progress));
+
+		// 更新元数据
+		if (metadata) {
+			task.metadata = { ...task.metadata, ...metadata };
+		}
+
 		console.log(`[TaskState] 任务 ${taskId} 进度: ${task.progress}%`);
 
 		// 发射事件，通知所有订阅者（SSE 连接）
-		this.emit("taskUpdate", taskId, task);
+		this.emit("taskUpdate", { taskId, task });
 
 		// 定期回调（每10%）
 		if (task.progress % 10 === 0) {
@@ -220,6 +247,111 @@ class TaskStateManager extends EventEmitter {
 	 */
 	getAllTasks(): TaskState[] {
 		return Array.from(this.tasks.values());
+	}
+
+	// ==================== ReAct Planning Agent 扩展方法 ====================
+
+	/**
+	 * 发射思考流事件（用于前端流式显示 Agent 思考过程）
+	 */
+	emitThoughtStream(taskId: string, thought: string, metadata?: any): void {
+		const task = this.tasks.get(taskId);
+		if (!task) {
+			console.warn(`[TaskState] 任务不存在: ${taskId}`);
+			return;
+		}
+
+		this.emit("thoughtStream", {
+			taskId,
+			thought,
+			metadata,
+			timestamp: new Date(),
+		});
+
+		console.log(`[TaskState] 思考流 ${taskId}: ${thought.substring(0, 50)}...`);
+	}
+
+	/**
+	 * 发射用户输入请求事件
+	 */
+	emitUserInputRequest(
+		taskId: string,
+		goalId: string,
+		question: string,
+		options?: string[]
+	): void {
+		const task = this.tasks.get(taskId);
+		if (!task) {
+			console.warn(`[TaskState] 任务不存在: ${taskId}`);
+			return;
+		}
+
+		this.emit("userInputRequired", {
+			taskId,
+			goalId,
+			question,
+			options,
+			timestamp: new Date(),
+		});
+
+		// 更新任务元数据
+		task.metadata = {
+			...task.metadata,
+			awaitingUserInput: true,
+			question,
+		};
+
+		console.log(`[TaskState] 等待用户输入 ${taskId}: ${question}`);
+	}
+
+	/**
+	 * 接收用户输入并发射事件
+	 */
+	receiveUserInput(taskId: string, goalId: string, input: string): void {
+		const task = this.tasks.get(taskId);
+		if (!task) {
+			console.warn(`[TaskState] 任务不存在: ${taskId}`);
+			return;
+		}
+
+		this.emit("userInputReceived", {
+			taskId,
+			goalId,
+			input,
+			timestamp: new Date(),
+		});
+
+		// 更新任务元数据
+		if (task.metadata) {
+			task.metadata.awaitingUserInput = false;
+			task.metadata.question = undefined;
+		}
+
+		console.log(`[TaskState] 收到用户输入 ${taskId}: ${input}`);
+	}
+
+	/**
+	 * 发射目标更新事件
+	 */
+	emitGoalUpdate(taskId: string, goalName: string): void {
+		const task = this.tasks.get(taskId);
+		if (!task) {
+			console.warn(`[TaskState] 任务不存在: ${taskId}`);
+			return;
+		}
+
+		this.emit("goalUpdate", {
+			taskId,
+			goalName,
+			timestamp: new Date(),
+		});
+
+		// 更新任务元数据
+		if (task.metadata) {
+			task.metadata.currentGoal = goalName;
+		}
+
+		console.log(`[TaskState] 目标更新 ${taskId}: ${goalName}`);
 	}
 }
 

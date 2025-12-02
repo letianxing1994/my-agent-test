@@ -2756,7 +2756,8 @@ app.get("/api/tasks/:taskId/events", (req, res) => {
 /**
  * 广播任务状态更新到所有订阅的 SSE 客户端
  */
-function broadcastTaskUpdate(taskId: string, task: any) {
+function broadcastTaskUpdate(data: { taskId: string; task: any }) {
+	const { taskId, task } = data;
 	const clients = sseClients.get(taskId);
 	if (!clients || clients.length === 0) {
 		return;
@@ -2774,13 +2775,14 @@ function broadcastTaskUpdate(taskId: string, task: any) {
 			completeTime: task.completeTime,
 			resultData: task.resultData,
 			errorMessage: task.errorMessage,
+			metadata: task.metadata, // 包含 ReAct 元数据
 		},
 	});
 
 	// 推送给所有订阅的客户端
 	clients.forEach((client, index) => {
 		try {
-			client.write(`data: ${eventData}\n\n`);
+			(client as any).write(`data: ${eventData}\n\n`);
 		} catch (error) {
 			console.error(`[SSE] 推送失败，移除客户端 ${index}:`, error);
 			clients.splice(index, 1);
@@ -2790,9 +2792,142 @@ function broadcastTaskUpdate(taskId: string, task: any) {
 	console.log(`[SSE] 任务 ${taskId} 状态已推送给 ${clients.length} 个客户端`);
 }
 
+/**
+ * 广播思考流到所有订阅的 SSE 客户端
+ */
+function broadcastThoughtStream(data: { taskId: string; thought: string; metadata?: any; timestamp: Date }) {
+	const { taskId, thought, metadata, timestamp } = data;
+	const clients = sseClients.get(taskId);
+	if (!clients || clients.length === 0) {
+		return;
+	}
+
+	const eventData = JSON.stringify({
+		type: "thought",
+		content: thought,
+		metadata,
+		timestamp,
+	});
+
+	clients.forEach((client) => {
+		try {
+			(client as any).write(`data: ${eventData}\n\n`);
+		} catch (error) {
+			console.error(`[SSE] 思考流推送失败:`, error);
+		}
+	});
+}
+
+/**
+ * 广播用户输入请求到所有订阅的 SSE 客户端
+ */
+function broadcastUserInputRequired(data: {
+	taskId: string;
+	goalId: string;
+	question: string;
+	options?: string[];
+	timestamp: Date;
+}) {
+	const { taskId, goalId, question, options, timestamp } = data;
+	const clients = sseClients.get(taskId);
+	if (!clients || clients.length === 0) {
+		return;
+	}
+
+	const eventData = JSON.stringify({
+		type: "user_input_required",
+		goalId,
+		question,
+		options,
+		timestamp,
+	});
+
+	clients.forEach((client) => {
+		try {
+			(client as any).write(`data: ${eventData}\n\n`);
+		} catch (error) {
+			console.error(`[SSE] 用户输入请求推送失败:`, error);
+		}
+	});
+
+	console.log(`[SSE] 任务 ${taskId} 用户输入请求已推送`);
+}
+
+/**
+ * 广播目标更新到所有订阅的 SSE 客户端
+ */
+function broadcastGoalUpdate(data: { taskId: string; goalName: string; timestamp: Date }) {
+	const { taskId, goalName, timestamp } = data;
+	const clients = sseClients.get(taskId);
+	if (!clients || clients.length === 0) {
+		return;
+	}
+
+	const eventData = JSON.stringify({
+		type: "goal_update",
+		goalName,
+		timestamp,
+	});
+
+	clients.forEach((client) => {
+		try {
+			(client as any).write(`data: ${eventData}\n\n`);
+		} catch (error) {
+			console.error(`[SSE] 目标更新推送失败:`, error);
+		}
+	});
+
+	console.log(`[SSE] 任务 ${taskId} 目标更新已推送: ${goalName}`);
+}
+
 // 监听 TaskStateManager 的事件，自动推送给 SSE 客户端
-taskStateManager.on("taskUpdate", (taskId: string, task: any) => {
-	broadcastTaskUpdate(taskId, task);
+taskStateManager.on("taskUpdate", (data: { taskId: string; task: any }) => {
+	broadcastTaskUpdate(data);
+});
+
+taskStateManager.on("thoughtStream", (data: any) => {
+	broadcastThoughtStream(data);
+});
+
+taskStateManager.on("userInputRequired", (data: any) => {
+	broadcastUserInputRequired(data);
+});
+
+taskStateManager.on("goalUpdate", (data: any) => {
+	broadcastGoalUpdate(data);
+});
+
+/**
+ * 接收用户输入（用于 ReAct Planning Agent）
+ * POST /api/tasks/:taskId/user-input
+ */
+app.post("/api/tasks/:taskId/user-input", (req, res) => {
+	try {
+		const { taskId } = req.params;
+		const { goalId, input } = req.body;
+
+		if (!input) {
+			return res.status(400).json({
+				success: false,
+				message: "缺少 input 参数",
+			});
+		}
+
+		// 通知 TaskStateManager 接收用户输入
+		taskStateManager.receiveUserInput(taskId, goalId || "", input);
+
+		res.json({
+			success: true,
+			message: "用户输入已接收",
+		});
+	} catch (error) {
+		console.error("接收用户输入失败:", error);
+		res.status(500).json({
+			success: false,
+			message: "接收用户输入失败",
+			error: (error as Error).message,
+		});
+	}
 });
 
 /**
