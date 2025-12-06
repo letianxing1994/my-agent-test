@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../game-factory"
+		},
+		{
+			"path": "../../game-factory-be"
+		}
+	],
+	"settings": {}
+}

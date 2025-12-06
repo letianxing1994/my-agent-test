@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(npx tsc:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker exec:*)",
+      "Bash(npm run build:*)",
+      "Bash(cat:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(curl:*)",
+      "Bash(KillShell f40d9f)",
+      "Bash(npm run start:planning-agent:*)",
+      "Bash(go build:*)",
+      "Bash([ -f .gitignore ])",
+      "Bash(npm install:*)",
+      "Bash([ -f .env.example ])"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
