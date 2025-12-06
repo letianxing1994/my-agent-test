@@ -267,6 +267,8 @@ export interface StageConfig {
 		specialization?: string;
 		extraTraits?: string;
 	};
+	// 2D文生图模型配置（用于策划agent生成概念图）
+	ai2dModel?: "stable-diffusion-xl" | "dall-e-3" | "imagen-3" | string;
 }
 
 export interface ExecutionConfig {

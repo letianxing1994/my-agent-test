@@ -7,6 +7,12 @@ import type { UserInput, StageConfig } from "../../types";
 import { LLMService, type LLMMessage, type LLMConfig } from "../../services/LLMService";
 import fs from "fs-extra";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+// ES 模块中获取 __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // 加载默认模型配置
 const agentModelsPath = path.resolve(__dirname, "../../../config/agentModels.default.json");
@@ -280,7 +286,9 @@ export class ReActPlanningAgentActions {
     agent: any
   ): Promise<ActionResult> {
     const { stageConfig } = context.taskMeta;
-    const model2D = stageConfig.ai2dModel || "stable-diffusion-xl";
+
+    // 🔥 从 stageConfig 读取 2D 模型配置（由员工Agent的ai2dModel字段决定）
+    const model2D = stageConfig?.ai2dModel || "stable-diffusion-xl";
 
     await agent.streamThought(`🎨 使用 ${model2D} 生成概念图...`);
 
@@ -294,8 +302,8 @@ export class ReActPlanningAgentActions {
 
         await agent.streamThought(`📝 图像提示词：\n${imagePrompt}`);
 
-        // 2. 调用 2D AI 模型（这里使用模拟）
-        const imageUrl = await this.call2DAIModelMock(model2D, imagePrompt, agent);
+        // 2. 调用 2D AI 模型
+        const imageUrl = await this.call2DAIModel(model2D, imagePrompt, agent);
 
         // 3. 保存图像
         const savedPath = await agent.saveGeneratedImage(
@@ -373,7 +381,53 @@ export class ReActPlanningAgentActions {
   }
 
   /**
-   * 模拟调用 2D AI 模型
+   * 调用 2D AI 模型生成图像
+   */
+  private async call2DAIModel(
+    model: string,
+    prompt: string,
+    agent: any
+  ): Promise<string> {
+    await agent.streamThought(`🎨 调用 ${model} API 生成图像...`);
+
+    try {
+      // 动态导入 AI2DService
+      const { AI2DService } = await import("../../services/AI2DService");
+
+      // 根据模型类型选择API密钥并验证
+      let apiKey = "";
+      if (model.includes("gemini")) {
+        apiKey = process.env.GOOGLE_AI_API_KEY || "";
+      } else if (model.includes("stable-diffusion") || model.includes("sdxl")) {
+        apiKey = process.env.STABILITY_API_KEY || "";
+      } else if (model.includes("dall-e")) {
+        apiKey = process.env.OPENAI_API_KEY || "";
+      } else if (model.includes("imagen")) {
+        apiKey = process.env.GOOGLE_CLOUD_API_KEY || "";
+      }
+
+      if (!apiKey) {
+        await agent.streamThought(`⚠️  未配置 ${model} 的 API 密钥，使用 Mock 生成`);
+        return await this.call2DAIModelMock(model, prompt, agent);
+      }
+
+      // 使用新的 AI2DService 生成图像
+      const imageUrl = await AI2DService.generateAndSave(model, prompt, {
+        aspectRatio: "16:9", // 默认宽高比
+        size: "1K", // 默认尺寸
+      });
+
+      await agent.streamThought(`✅ ${model} 图像生成成功`);
+      return imageUrl;
+    } catch (error) {
+      await agent.streamThought(`❌ ${model} API 调用失败: ${error instanceof Error ? error.message : "未知错误"}`);
+      await agent.streamThought(`🔄 降级使用 Mock 生成`);
+      return await this.call2DAIModelMock(model, prompt, agent);
+    }
+  }
+
+  /**
+   * Mock生成：模拟AI生成，返回占位图
    */
   private async call2DAIModelMock(
     model: string,
@@ -381,7 +435,7 @@ export class ReActPlanningAgentActions {
     agent: any
   ): Promise<string> {
     // 实际应该调用真实的 API（Stable Diffusion / DALL-E / Midjourney）
-    await agent.streamThought(`🔄 调用 ${model} API...`);
+    await agent.streamThought(`🔧 Mock 模式: 生成 ${model} 占位图...`);
 
     // 模拟延迟
     await new Promise((resolve) => setTimeout(resolve, 1000));
