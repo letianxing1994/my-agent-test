@@ -1,22 +1,18 @@
 /**
  * Google Gemini 3 Pro 图像生成提供者
- * 基于官方 @google/generative-ai SDK
+ * 基于官方 @google/genai SDK (新版统一SDK)
  */
 
-import {
-	GoogleGenerativeAI,
-	type GenerateContentConfig,
-	type ImageConfig,
-} from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import type { Image2DProvider, Image2DOptions } from "../ImageProvider";
 
 export class GeminiProProvider implements Image2DProvider {
 	private apiKey: string;
-	private client: GoogleGenerativeAI;
+	private client: GoogleGenAI;
 
 	constructor(apiKey: string) {
 		this.apiKey = apiKey;
-		this.client = new GoogleGenerativeAI(apiKey);
+		this.client = new GoogleGenAI({ apiKey });
 	}
 
 	getName(): string {
@@ -25,38 +21,41 @@ export class GeminiProProvider implements Image2DProvider {
 
 	async generate(prompt: string, options?: Image2DOptions): Promise<string> {
 		try {
-			// 获取模型实例
-			const model = this.client.getGenerativeModel({
-				model: "gemini-3-pro-image-preview",
-			});
-
 			// 解析选项
 			const aspectRatio = options?.aspectRatio || "16:9";
 			const imageSize = this.parseImageSize(options?.size) || "1K";
 
-			// 配置生成参数
-			const config: GenerateContentConfig = {
-				responseModalities: ["text", "image"],
-				imageConfig: {
-					aspectRatio,
-					imageSize,
-				} as ImageConfig,
-			};
-
-			// 发送生成请求
-			const result = await model.generateContent({
-				contents: [{ role: "user", parts: [{ text: prompt }] }],
-				generationConfig: config,
+			// 发送生成请求（新SDK格式）
+			const response = await this.client.models.generateContent({
+				model: "gemini-3-pro-image-preview",
+				contents: prompt,
+				config: {
+					responseModalities: ["TEXT", "IMAGE"],
+					imageConfig: {
+						aspectRatio: aspectRatio,
+						imageSize: imageSize,
+					},
+				},
 			});
 
-			// 解析响应，提取图像数据
-			const imagePart = result.response.parts.find((part) => part.inlineData);
-			if (!imagePart?.inlineData) {
-				throw new Error("Gemini未生成图像数据");
+			// 方法1：使用 response.data getter（推荐，更简洁）
+			if (response.data) {
+				return response.data;
 			}
 
-			// 返回 base64 数据
-			return imagePart.inlineData.data;
+			// 方法2：手动从 candidates 中提取（兜底）
+			if (response.candidates && response.candidates.length > 0) {
+				const candidate = response.candidates[0];
+				if (candidate.content?.parts) {
+					for (const part of candidate.content.parts) {
+						if (part.inlineData?.data) {
+							return part.inlineData.data;
+						}
+					}
+				}
+			}
+
+			throw new Error("Gemini未生成图像数据");
 		} catch (error) {
 			console.error("[GeminiProProvider] 图像生成失败:", error);
 			throw new Error(

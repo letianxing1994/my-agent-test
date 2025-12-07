@@ -36,11 +36,29 @@ export interface ObservationContext {
   // 历史记录
   previousIterations: IterationRecord[];
 
+  // 用户上传的资源
+  uploadedResources?: Array<{
+    filename: string;
+    type: 'image' | 'audio' | '3d' | 'document';
+    purpose: string;
+    path: string;
+  }>;
+
+  // 已处理的概念图（用于Observe阶段）
+  uploadedConceptImages?: Array<{
+    filename: string;
+    type: 'image';
+    purpose: string;
+    path: string;
+  }>;
+
   // 任务元信息
   taskMeta: {
     projectId: string;
+    userId: number; // 新增：用户ID
     userInput: any;
     stageConfig: any;
+    cloudProvider: 'aliyun' | 'gcp'; // 新增：云服务商
     iterationCount: number;
     startTime: Date;
     currentPlan?: GoalPlan;

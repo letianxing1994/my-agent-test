@@ -6,6 +6,7 @@
 import "dotenv/config";
 import path from "node:path";
 import fs from "fs-extra";
+import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { WebSocket } from "ws";
 import type {
@@ -28,6 +29,8 @@ import type {
 import { taskStateManager, TaskStatus } from "../../services/TaskStateManager";
 import { mem0Service } from "../../services/Mem0Service";
 import { knowledgeBaseService } from "../../services/KnowledgeBaseService";
+import { PathService } from "../../services/PathService";
+import { storageService } from "../../services/storage/StorageService";
 import { dynamicPromptGenerator } from "./DynamicPromptGenerator";
 
 export class ReActPlanningAgent {
@@ -37,6 +40,8 @@ export class ReActPlanningAgent {
 
   // 当前执行状态
   private currentProjectId: string | null = null;
+  private currentUserId: number | null = null; // 新增：用户ID
+  private cloudProvider: "aliyun" | "gcp" = "aliyun"; // 新增：云服务商
   private currentContext: ObservationContext | null = null;
   private currentPlan: GoalPlan | null = null;
   private iterationCount = 0;
@@ -132,10 +137,16 @@ export class ReActPlanningAgent {
       switch (data.type) {
         case "USER_INPUT" as MessageType:
           if (data.content && typeof data.content === "object") {
+            const content = data.content as any;
+            const userId = content.project?.ownerId || 1; // 默认使用1作为userId
+            const cloudProvider = content.project?.cloudProvider || "aliyun";
+
             await this.startReActLoop(
               data.projectId,
-              (data.content as any).userInput as UserInput,
-              (data.content as any).stageConfig as StageConfig
+              userId,
+              content.userInput as UserInput,
+              content.stageConfig as StageConfig,
+              cloudProvider
             );
           }
           break;
@@ -169,10 +180,14 @@ export class ReActPlanningAgent {
    */
   async startReActLoop(
     projectId: string,
+    userId: number,
     userInput: UserInput,
-    stageConfig: StageConfig
+    stageConfig: StageConfig,
+    cloudProvider: "aliyun" | "gcp" = "aliyun"
   ): Promise<void> {
     this.currentProjectId = projectId;
+    this.currentUserId = userId;
+    this.cloudProvider = cloudProvider;
     this.iterationCount = 0;
     this.startTime = new Date();
 
@@ -190,10 +205,18 @@ export class ReActPlanningAgent {
       pendingSections: [],
       externalInputs: {},
       previousIterations: [],
+      uploadedResources: (userInput.resourceFiles || []).filter(r => r.path !== undefined) as Array<{
+        filename: string;
+        type: 'image' | 'audio' | '3d' | 'document';
+        purpose: string;
+        path: string;
+      }>, // 保存用户上传资源，过滤掉没有path的
       taskMeta: {
         projectId,
+        userId, // 添加userId
         userInput,
         stageConfig,
+        cloudProvider, // 添加cloudProvider
         iterationCount: 0,
         startTime: this.startTime,
       },
@@ -357,12 +380,12 @@ export class ReActPlanningAgent {
    * 阶段 1: 观察感知 (Observe)
    */
   private async observe(): Promise<ObservationContext> {
-    if (!this.currentContext || !this.currentProjectId) {
+    if (!this.currentContext || !this.currentProjectId || !this.currentUserId) {
       throw new Error("上下文未初始化");
     }
 
-    // 1. 读取当前 GDD 产物
-    const gddPath = path.resolve(`./data/projects/${this.currentProjectId}/gdd.json`);
+    // 1. 读取当前 GDD 产物 - 使用PathService
+    const gddPath = PathService.getGDDJsonPath(this.currentUserId, this.currentProjectId);
     let currentGDD: any = { sandbox: {}, interface: {} };
 
     if (await fs.pathExists(gddPath)) {
@@ -385,15 +408,28 @@ export class ReActPlanningAgent {
       }
     }
 
-    // 3. 更新上下文
+    // 3. 新增：感知用户上传的资源
+    const uploadedConceptImages = (this.currentContext.uploadedResources || [])
+      .filter(
+        (r) => r.type === "image" && (r.purpose === "concept-art" || r.purpose === "character" || r.purpose === "environment")
+      ) as Array<{
+        filename: string;
+        type: "image";
+        purpose: string;
+        path: string;
+      }>;
+
+    // 4. 更新上下文
     this.currentContext.currentGDD = currentGDD;
     this.currentContext.completedSections = completed;
     this.currentContext.pendingSections = pending;
+    this.currentContext.uploadedConceptImages = uploadedConceptImages; // 保存过滤后的概念图
 
     await this.streamThought(
       `观察结果:\n` +
       `- 已完成: ${completed.length} 个任务\n` +
       `- 待完成: ${pending.length} 个任务\n` +
+      `- 用户上传概念图: ${uploadedConceptImages.length} 张\n` +
       `- GDD 章节数: ${Object.keys(currentGDD.sandbox || {}).length + Object.keys(currentGDD.interface || {}).length}`
     );
 
@@ -802,8 +838,9 @@ export class ReActPlanningAgent {
   /**
    * 更新 GDD 文件
    */
-  async updateGDD(projectId: string, goal: SubGoal, output: any): Promise<void> {
-    const gddPath = path.resolve(`./data/projects/${projectId}/gdd.json`);
+  async updateGDD(userId: number, projectId: string, goal: SubGoal, output: any): Promise<void> {
+    // 使用PathService获取路径
+    const gddPath = PathService.getGDDJsonPath(userId, projectId);
 
     // 确保目录存在
     await fs.ensureDir(path.dirname(gddPath));
@@ -895,28 +932,79 @@ export class ReActPlanningAgent {
       confirmedAt: new Date().toISOString(),
     };
 
-    await this.updateGDD(this.currentProjectId!, goal, output);
+    await this.updateGDD(this.currentUserId!, this.currentProjectId!, goal, output);
   }
 
   /**
    * 保存生成的图像
    */
   async saveGeneratedImage(
+    userId: number,
     projectId: string,
     goalId: string,
-    imageUrl: string
+    imageUrl: string,
+    cloudProvider: "aliyun" | "gcp"
   ): Promise<string> {
-    const imagesDir = path.resolve(`./data/projects/${projectId}/images`);
-    await fs.ensureDir(imagesDir);
+    // 使用PathService获取本地路径
+    const localDir = path.join(
+      PathService.getLocalProjectPath(userId, projectId),
+      "images"
+    );
+    await fs.ensureDir(localDir);
 
     const filename = `${goalId}_${Date.now()}.png`;
-    const filePath = path.join(imagesDir, filename);
+    const localPath = path.join(localDir, filename);
 
-    // 实际应该从 imageUrl 下载图像并保存
-    // 这里暂时创建一个占位符文件
-    await fs.writeFile(filePath, `Mock image for ${goalId}`);
+    // 从imageUrl下载图像
+    if (imageUrl.startsWith("data:image")) {
+      // Base64图像
+      const base64Data = imageUrl.split(",")[1];
+      const buffer = Buffer.from(base64Data, "base64");
+      await fs.writeFile(localPath, buffer);
+    } else if (imageUrl.startsWith("http")) {
+      // HTTP URL
+      const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
+      await fs.writeFile(localPath, response.data);
+    } else {
+      // Mock数据（兼容旧代码）
+      await fs.writeFile(localPath, `Mock image for ${goalId}`);
+    }
 
-    return filePath;
+    // 可选：上传到云端（正式环境）
+    if (process.env.NODE_ENV === "production") {
+      const cloudKey = `${PathService.getCloudProjectPath(userId, projectId)}/images/${filename}`;
+      const result = await storageService.upload(cloudProvider, cloudKey, localPath);
+
+      // 返回云端URL
+      return result.url;
+    }
+
+    // 返回本地路径（测试环境）
+    return localPath;
+  }
+
+  /**
+   * 从云端下载资源到本地
+   */
+  private async downloadFromCloud(
+    cloudUrl: string,
+    userId: number,
+    projectId: string,
+    filename: string
+  ): Promise<string> {
+    const localDir = path.join(
+      PathService.getLocalProjectPath(userId, projectId),
+      "uploads"
+    );
+    const localPath = path.join(localDir, filename);
+
+    await fs.ensureDir(path.dirname(localPath));
+
+    // 使用axios下载
+    const response = await axios.get(cloudUrl, { responseType: "arraybuffer" });
+    await fs.writeFile(localPath, response.data);
+
+    return localPath;
   }
 
   /**

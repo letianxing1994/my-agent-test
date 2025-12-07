@@ -118,7 +118,7 @@ export class ReActPlanningAgentActions {
 
       // 5. 解析输出并更新 GDD
       const parsedOutput = this.parseLLMOutput(llmResponse.content, goal);
-      await agent.updateGDD(context.taskMeta.projectId, goal, parsedOutput);
+      await agent.updateGDD(context.taskMeta.userId, context.taskMeta.projectId, goal, parsedOutput);
 
       await agent.streamThought(`✅ ${goal.name} 完成，已更新 GDD`);
 
@@ -150,7 +150,7 @@ export class ReActPlanningAgentActions {
 
         try {
           const mockOutput = await this.callLLMMock(goal, context, agent);
-          await agent.updateGDD(context.taskMeta.projectId, goal, mockOutput);
+          await agent.updateGDD(context.taskMeta.userId, context.taskMeta.projectId, goal, mockOutput);
 
           await agent.streamThought(`✅ ${goal.name} 完成 (Mock 模式)，已更新 GDD`);
 
@@ -285,59 +285,131 @@ export class ReActPlanningAgentActions {
     context: ObservationContext,
     agent: any
   ): Promise<ActionResult> {
-    const { stageConfig } = context.taskMeta;
-
-    // 🔥 从 stageConfig 读取 2D 模型配置（由员工Agent的ai2dModel字段决定）
+    const { stageConfig, userInput, cloudProvider, userId, projectId } = context.taskMeta;
     const model2D = stageConfig?.ai2dModel || "stable-diffusion-xl";
 
-    await agent.streamThought(`🎨 使用 ${model2D} 生成概念图...`);
+    const images: Array<{ prompt: string; path: string; source: string }> = [];
 
     try {
-      const images: Array<{ prompt: string; path: string }> = [];
+      // ✅ 步骤1：检查用户是否上传了概念图
+      const uploadedConceptImages = context.uploadedConceptImages || [];
 
-      // 遍历所有需要生成的图像
-      for (const promptTemplate of goal.imagePrompts || []) {
-        // 1. 生成详细的图像提示词
-        const imagePrompt = await this.generateImagePrompt(promptTemplate, context, agent);
-
-        await agent.streamThought(`📝 图像提示词：\n${imagePrompt}`);
-
-        // 2. 调用 2D AI 模型
-        const imageUrl = await this.call2DAIModel(model2D, imagePrompt, agent);
-
-        // 3. 保存图像
-        const savedPath = await agent.saveGeneratedImage(
-          context.taskMeta.projectId,
-          goal.id,
-          imageUrl
+      if (uploadedConceptImages.length > 0) {
+        // ✅ 策略A：优先使用用户上传的概念图
+        await agent.streamThought(
+          `📸 检测到用户上传的概念图（${uploadedConceptImages.length}张），将直接使用`
         );
 
-        images.push({ prompt: imagePrompt, path: savedPath });
+        for (const uploadedImage of uploadedConceptImages) {
+          // ✅ 根据cloudProvider处理路径
+          let localPath: string;
 
-        await agent.streamThought(`✅ 概念图已生成：${savedPath}`);
+          if (uploadedImage.path.startsWith("http")) {
+            // 云端URL：需要下载到本地
+            await agent.streamThought(`☁️  下载云端图片：${uploadedImage.filename}`);
+            localPath = await agent.downloadFromCloud(
+              uploadedImage.path,
+              userId,
+              projectId,
+              uploadedImage.filename
+            );
+          } else {
+            // 本地路径：直接使用
+            localPath = uploadedImage.path;
+          }
+
+          images.push({
+            prompt: `用户上传: ${uploadedImage.filename}`,
+            path: localPath,
+            source: "user-uploaded",
+          });
+
+          await agent.streamThought(`✅ 使用上传图片：${uploadedImage.filename}`);
+        }
+
+        // ✅ 可选：如果用户上传的数量不足，补充AI生成
+        const requiredCount = goal.imagePrompts?.length || 2;
+        if (images.length < requiredCount) {
+          await agent.streamThought(
+            `🎨 用户上传${images.length}张，需求${requiredCount}张，将用AI生成剩余${requiredCount - images.length}张`
+          );
+
+          for (let i = images.length; i < requiredCount; i++) {
+            const promptTemplate = goal.imagePrompts![i];
+            const imagePrompt = await this.generateImagePrompt(promptTemplate, context, agent);
+
+            await agent.streamThought(`📝 图像提示词：\n${imagePrompt}`);
+
+            const imageUrl = await this.call2DAIModel(model2D, imagePrompt, agent);
+            const savedPath = await agent.saveGeneratedImage(
+              userId,
+              projectId,
+              goal.id,
+              imageUrl,
+              cloudProvider
+            );
+
+            images.push({
+              prompt: imagePrompt,
+              path: savedPath,
+              source: "ai-generated",
+            });
+
+            await agent.streamThought(`✅ 概念图已生成：${savedPath}`);
+          }
+        }
+      } else {
+        // ✅ 策略B：用户没上传，全部AI生成
+        await agent.streamThought(`🎨 使用 ${model2D} 生成概念图...`);
+
+        for (const promptTemplate of goal.imagePrompts || []) {
+          const imagePrompt = await this.generateImagePrompt(promptTemplate, context, agent);
+
+          await agent.streamThought(`📝 图像提示词：\n${imagePrompt}`);
+
+          const imageUrl = await this.call2DAIModel(model2D, imagePrompt, agent);
+          const savedPath = await agent.saveGeneratedImage(
+            userId,
+            projectId,
+            goal.id,
+            imageUrl,
+            cloudProvider
+          );
+
+          images.push({
+            prompt: imagePrompt,
+            path: savedPath,
+            source: "ai-generated",
+          });
+
+          await agent.streamThought(`✅ 概念图已生成：${savedPath}`);
+        }
       }
 
       // 4. 更新 GDD 中的图像引用
-      await agent.updateGDD(context.taskMeta.projectId, goal, {
+      await agent.updateGDD(userId, projectId, goal, {
         conceptArt: images,
       });
 
       goal.status = "completed";
 
+      const uploadedCount = images.filter((img) => img.source === "user-uploaded").length;
+      const generatedCount = images.filter((img) => img.source === "ai-generated").length;
+
       return {
         success: true,
         output: { images },
-        thought: `生成概念图：${goal.name}`,
+        thought: `生成概念图：${goal.name}（上传${uploadedCount}张，AI生成${generatedCount}张）`,
         progressDelta: goal.estimatedProgress,
         nextAction: "continue",
         artifacts: images.map((img) => ({
           type: "image" as const,
           path: img.path,
-          data: { prompt: img.prompt },
+          data: { prompt: img.prompt, source: img.source },
         })),
       };
     } catch (error: any) {
-      await agent.streamThought(`❌ 图像生成失败: ${error.message}`);
+      await agent.streamThought(`❌ 图像处理失败: ${error.message}`);
 
       return {
         success: false,

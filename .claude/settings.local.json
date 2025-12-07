@@ -17,7 +17,19 @@
       "Bash(go build:*)",
       "Bash([ -f .gitignore ])",
       "Bash(npm install:*)",
-      "Bash([ -f .env.example ])"
+      "Bash([ -f .env.example ])",
+      "WebFetch(domain:ai.google.dev)",
+      "WebSearch",
+      "Bash(go get:*)",
+      "Bash(npm cache clean:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm config:*)",
+      "Bash([ -d node_modules/@google/genai ])",
+      "Bash([ -f package.json ])",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git init:*)"
     ],
     "deny": [],
     "ask": []

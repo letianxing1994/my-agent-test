@@ -216,6 +216,7 @@ export type GDD = z.infer<typeof GDD_Schema>;
 export interface GameProjectConfig {
 	projectId: string;
 	projectName: string;
+	ownerId?: number; // 新增：项目所有者ID（用于路径管理）
 	executionMode: ExecutionMode;
 	userInput: UserInput;
 	cloudProvider?: "aliyun" | "gcp";
