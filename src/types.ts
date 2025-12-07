@@ -247,6 +247,7 @@ export interface StageConfig {
 	model: string;
 	knowledgeBase?: string;
 	mode: "llm+kb" | "llm+custom-kb" | "mcp-local" | "hybrid";
+	autoExecute?: boolean; // 自动执行模式：遇到选项自动随机选择
 	tools?: JsonRecord;
 	mcp?: {
 		endpoint: string;

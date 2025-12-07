@@ -244,34 +244,53 @@ export class ReActPlanningAgentActions {
     context: ObservationContext,
     agent: any
   ): Promise<ActionResult> {
-    await agent.streamThought(`⏸️  需要你的输入来继续：${goal.description}`);
-
     // 生成用户问题和选项
     const question = this.generateUserQuestion(goal, context);
     const options = this.generateUserOptions(goal);
 
-    // 发送用户输入请求事件
-    await agent.emitUserInputRequest({
-      projectId: context.taskMeta.projectId,
-      goalId: goal.id,
-      question,
-      options,
-    });
+    // 检查是否启用自动执行模式
+    const autoExecute = context.taskMeta.stageConfig?.autoExecute || false;
 
-    // 暂停循环，等待用户输入
-    const userInput = await agent.waitForUserInput(goal.id);
+    let userInput: string;
 
-    await agent.streamThought(`👤 收到你的输入：${userInput}`);
+    if (autoExecute && options && options.length > 0) {
+      // 自动执行模式：随机选择一个选项
+      const randomIndex = Math.floor(Math.random() * options.length);
+      userInput = options[randomIndex];
 
-    // 基于用户输入更新 GDD
-    await agent.updateGDDWithUserInput(goal, userInput);
+      await agent.streamThought(`🤖 自动执行模式：随机选择「${userInput}」`);
+      await agent.streamThought(`💡 问题：${question}`);
+      await agent.streamThought(`📋 可选项：${options.join(', ')}`);
+
+      // 基于自动选择更新 GDD
+      await agent.updateGDDWithUserInput(goal, userInput);
+    } else {
+      // 正常模式：等待用户输入
+      await agent.streamThought(`⏸️  需要你的输入来继续：${goal.description}`);
+
+      // 发送用户输入请求事件
+      await agent.emitUserInputRequest({
+        projectId: context.taskMeta.projectId,
+        goalId: goal.id,
+        question,
+        options,
+      });
+
+      // 暂停循环，等待用户输入
+      userInput = await agent.waitForUserInput(goal.id);
+
+      await agent.streamThought(`👤 收到你的输入：${userInput}`);
+
+      // 基于用户输入更新 GDD
+      await agent.updateGDDWithUserInput(goal, userInput);
+    }
 
     goal.status = "completed";
 
     return {
       success: true,
       output: { userInput },
-      thought: `用户确认：${goal.name}`,
+      thought: autoExecute ? `自动选择：${goal.name}` : `用户确认：${goal.name}`,
       progressDelta: goal.estimatedProgress,
       nextAction: "continue",
     };
