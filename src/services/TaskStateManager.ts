@@ -126,8 +126,10 @@ class TaskStateManager extends EventEmitter {
 		// 发射事件，通知所有订阅者（SSE 连接）
 		this.emit("taskUpdate", { taskId, task });
 
-		// 触发回调
-		this.notifyCallback(task);
+		// 只在任务完成或失败时触发回调，避免频繁回调导致429错误
+		if (status === TaskStatus.COMPLETED || status === TaskStatus.FAILED) {
+			this.notifyCallback(task);
+		}
 	}
 
 	/**
@@ -153,13 +155,8 @@ class TaskStateManager extends EventEmitter {
 		// 发射事件，通知所有订阅者（SSE 连接）
 		this.emit("taskUpdate", { taskId, task });
 
-		// 优化回调：只在进度跨越10%阈值时才回调（例如从15%到25%）
-		// 避免在同一个10%区间内频繁回调
-		const oldThreshold = Math.floor(oldProgress / 10);
-		const newThreshold = Math.floor(task.progress / 10);
-		if (newThreshold > oldThreshold) {
-			this.notifyCallback(task);
-		}
+		// 进度更新不触发回调，只有完成或失败时才回调
+		// 这样可以避免频繁回调导致429错误
 	}
 
 	/**

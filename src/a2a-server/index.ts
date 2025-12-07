@@ -419,59 +419,80 @@ function saveProject(project: GameProjectConfig) {
 // 处理Agent连接
 wss.on("connection", (ws: WebSocket) => {
   let agentId: string | null = null;
-  
-  console.log("新的Agent连接");
-  
-  ws.on("message", (message: string) => {
+
+  console.log("[A2A Server] 🔌 新的WebSocket连接已建立");
+  console.log(`[A2A Server] 📡 WebSocket readyState: ${ws.readyState}`);
+  console.log(`[A2A Server] 🎧 开始监听message事件...`);
+
+  ws.on("message", (data) => {
+    console.log(`[A2A Server] 🔔 message事件被触发！数据类型: ${typeof data}, 是Buffer: ${Buffer.isBuffer(data)}`);
     try {
-      const data = JSON.parse(message) as AgentMessage;
-      
-      // 处理注册消息
+      // WebSocket message can be Buffer or string, convert to string first
+      const message = data.toString();
+      console.log(`[A2A Server] 📨 收到WebSocket原始消息: ${message.substring(0, 200)}...`);
+      const parsedData = JSON.parse(message) as AgentMessage;
+      console.log(`[A2A Server] 📦 解析后的消息类型: ${parsedData.type}, 发送者: ${parsedData.senderId}, 接收者: ${parsedData.receiverId}`);
+
+      // 处理注册消息 - 添加详细调试
+      console.log(`[A2A Server] 🔍 注册检查调试:`);
+      console.log(`  - parsedData.type: "${parsedData.type}" (类型: ${typeof parsedData.type})`);
+      console.log(`  - MessageType.STATUS_UPDATE: "${MessageType.STATUS_UPDATE}" (类型: ${typeof MessageType.STATUS_UPDATE})`);
+      console.log(`  - type匹配: ${parsedData.type === MessageType.STATUS_UPDATE}`);
+      console.log(`  - content类型: ${typeof parsedData.content}`);
+      console.log(`  - content内容: ${JSON.stringify(parsedData.content)}`);
+      if (typeof parsedData.content === 'object' && parsedData.content !== null) {
+        console.log(`  - 'action' in content: ${'action' in parsedData.content}`);
+        console.log(`  - content.action: "${(parsedData.content as any).action}"`);
+      }
+
 			if (
-				data.type === MessageType.STATUS_UPDATE &&
-				typeof data.content === 'object' && data.content !== null && 'action' in data.content &&
-				data.content.action === "register"
+				parsedData.type === MessageType.STATUS_UPDATE &&
+				typeof parsedData.content === 'object' && parsedData.content !== null && 'action' in parsedData.content &&
+				parsedData.content.action === "register"
 			) {
-        agentId = data.senderId;
+        console.log(`[A2A Server] 🎯 检测到注册消息！准备注册 Agent: ${parsedData.senderId}`);
+        agentId = parsedData.senderId;
         activeAgents.set(agentId, ws);
-        console.log(`Agent ${agentId} 已注册`);
-        
+        console.log(`[A2A Server] ✅ Agent ${agentId} 已注册成功`);
+        console.log(`[A2A Server] 📊 当前活跃Agent列表: ${Array.from(activeAgents.keys()).join(', ')}`);
+
         // 发送确认消息
         const response: AgentMessage = {
           messageId: uuidv4(),
 					senderId: "a2a-server",
           receiverId: agentId,
-          projectId: data.projectId,
+          projectId: parsedData.projectId,
           type: MessageType.STATUS_UPDATE,
 					content: { status: "connected", message: "成功连接到A2A服务器" },
           timestamp: new Date().toISOString(),
 					requiresAck: false,
         };
         ws.send(JSON.stringify(response));
+        console.log(`[A2A Server] 📤 已向 ${agentId} 发送注册确认`);
         return;
       }
-      
-      console.log(`收到来自 ${data.senderId} 的消息: ${data.type}`);
-      
+
+      console.log(`[A2A Server] 📬 收到来自 ${parsedData.senderId} 的消息: ${parsedData.type}`);
+
       // 路由消息到目标Agent
-			if (data.receiverId !== "a2a-server") {
-        const targetAgent = activeAgents.get(data.receiverId);
+			if (parsedData.receiverId !== "a2a-server") {
+        const targetAgent = activeAgents.get(parsedData.receiverId);
         if (targetAgent && targetAgent.readyState === WebSocket.OPEN) {
           targetAgent.send(message);
-          console.log(`消息已转发到 ${data.receiverId}`);
+          console.log(`消息已转发到 ${parsedData.receiverId}`);
         } else {
-          console.error(`目标Agent ${data.receiverId} 未连接`);
+          console.error(`目标Agent ${parsedData.receiverId} 未连接`);
           // 发送错误响应
           if (ws.readyState === WebSocket.OPEN) {
             const errorResponse: AgentMessage = {
               messageId: uuidv4(),
 							senderId: "a2a-server",
-              receiverId: data.senderId,
-              projectId: data.projectId,
+              receiverId: parsedData.senderId,
+              projectId: parsedData.projectId,
               type: MessageType.STATUS_UPDATE,
 							content: {
 								status: "error",
-								message: `目标Agent ${data.receiverId} 未连接`,
+								message: `目标Agent ${parsedData.receiverId} 未连接`,
 							},
               timestamp: new Date().toISOString(),
 							requiresAck: false,
@@ -481,7 +502,7 @@ wss.on("connection", (ws: WebSocket) => {
         }
       } else {
         // 处理发送给服务器的消息
-        handleServerMessage(data, ws);
+        handleServerMessage(parsedData, ws);
       }
     } catch (error) {
       console.error("处理消息失败:", error);
@@ -917,7 +938,24 @@ function handleServerMessage(message: AgentMessage, senderWs: WebSocket) {
       }
       break;
 		}
-      
+
+		case MessageType.STATUS_UPDATE: {
+			// 处理Agent状态更新
+			console.log(`Agent ${message.senderId} 状态更新:`, message.content);
+
+			// 如果是项目相关的状态更新，可以更新项目状态
+			if (message.projectId) {
+				const project = projectManager.getProject(message.projectId);
+				if (project && typeof message.content === 'object' && message.content !== null) {
+					const content = message.content as any;
+					if (content.stageId) {
+						console.log(`项目 ${message.projectId} - ${content.stageId} 阶段状态: ${content.status}`);
+					}
+				}
+			}
+			break;
+		}
+
     default:
       console.log(`未知消息类型: ${message.type}`);
   }
@@ -1265,13 +1303,25 @@ function sendPlanningTask(project: GameProjectConfig): void {
 	}
 	const stageConfig = stageConfigFor(project.projectId, "planning");
 	markStageStatus(project.projectId, "planning", "running");
+
+  console.log(`[A2A Server] 🎯 准备发送策划任务，ProjectID: ${project.projectId}`);
+  console.log(`[A2A Server] 📊 当前活跃Agent数量: ${activeAgents.size}`);
+  console.log(`[A2A Server] 📋 活跃Agent列表: ${Array.from(activeAgents.keys()).join(', ') || '无'}`);
+
+  const planningAgent = activeAgents.get("planning-agent");
+  console.log(`[A2A Server] 🔍 查找planning-agent: ${planningAgent ? '找到' : '未找到'}`);
+
+  if (planningAgent) {
+    console.log(`[A2A Server] 🔌 WebSocket状态: ${planningAgent.readyState === WebSocket.OPEN ? 'OPEN' : planningAgent.readyState === WebSocket.CONNECTING ? 'CONNECTING' : planningAgent.readyState === WebSocket.CLOSING ? 'CLOSING' : 'CLOSED'}`);
+  }
+
   const planningMessage: AgentMessage = {
     messageId: uuidv4(),
 		senderId: "a2a-server",
 		receiverId: "planning-agent",
     projectId: project.projectId,
     type: MessageType.USER_INPUT,
-    content: { 
+    content: {
       project,
       userInput: project.userInput,
 			executionMode: project.executionMode,
@@ -1280,13 +1330,14 @@ function sendPlanningTask(project: GameProjectConfig): void {
     timestamp: new Date().toISOString(),
 		requiresAck: true,
   };
-  
-	const planningAgent = activeAgents.get("planning-agent");
+
   if (planningAgent && planningAgent.readyState === WebSocket.OPEN) {
     planningAgent.send(JSON.stringify(planningMessage));
-    console.log(`已发送策划任务到 Planning Agent: ${project.projectId}`);
+    console.log(`[A2A Server] ✅ 已发送策划任务到 Planning Agent: ${project.projectId}`);
+    console.log(`[A2A Server] 📤 消息类型: ${MessageType.USER_INPUT}, MessageID: ${planningMessage.messageId}`);
   } else {
-		console.warn("Planning Agent 未连接，任务等待中");
+		console.warn(`[A2A Server] ⚠️ Planning Agent 未连接或状态不正常，任务等待中`);
+    console.warn(`[A2A Server] 详细信息: Agent存在=${!!planningAgent}, WebSocket状态=${planningAgent?.readyState}`);
   }
 }
 

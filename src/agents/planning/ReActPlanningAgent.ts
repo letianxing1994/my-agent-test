@@ -19,9 +19,11 @@ import type {
   ThoughtStreamEvent,
   UserInputRequest,
 } from "../../types/planning-react";
+import {
+  MessageType,  // 作为值导入，而不是类型
+} from "../../types";
 import type {
   AgentMessage,
-  MessageType,
   UserInput,
   StageConfig,
   GDD,
@@ -74,27 +76,32 @@ export class ReActPlanningAgent {
    */
   async connect() {
     try {
+      console.log(`[ReAct Planning Agent] 🔄 正在连接到 A2A 服务器: ${this.serverUrl}`);
       this.ws = new WebSocket(this.serverUrl);
 
       this.ws.on("open", () => {
-        console.log("[ReAct Planning Agent] 已连接到A2A服务器");
+        console.log("[ReAct Planning Agent] ✅ WebSocket连接已建立");
+        console.log(`[ReAct Planning Agent] 📡 WebSocket readyState: ${this.ws?.readyState} (1=OPEN)`);
         this.register();
       });
 
-      this.ws.on("message", (message: string) => {
+      this.ws.on("message", (data) => {
+        // WebSocket message can be Buffer or string, convert to string first
+        const message = data.toString();
+        console.log(`[ReAct Planning Agent] 📨 收到消息（前100字符）: ${message.substring(0, 100)}...`);
         this.handleMessage(message);
       });
 
       this.ws.on("close", () => {
-        console.log("[ReAct Planning Agent] 与A2A服务器的连接已关闭");
+        console.log("[ReAct Planning Agent] ❌ 与A2A服务器的连接已关闭");
         setTimeout(() => this.connect(), 5000);
       });
 
       this.ws.on("error", (error) => {
-        console.error("[ReAct Planning Agent] WebSocket错误:", error);
+        console.error("[ReAct Planning Agent] ⚠️ WebSocket错误:", error);
       });
     } catch (error) {
-      console.error("[ReAct Planning Agent] 连接失败:", error);
+      console.error("[ReAct Planning Agent] ❌ 连接失败:", error);
       setTimeout(() => this.connect(), 5000);
     }
   }
@@ -103,14 +110,27 @@ export class ReActPlanningAgent {
    * 注册 Agent
    */
   private register() {
-    if (!this.ws) return;
+    if (!this.ws) {
+      console.warn("[ReAct Planning Agent] ⚠️ WebSocket未连接，无法注册");
+      return;
+    }
+
+    // 检查 WebSocket 状态
+    console.log(`[ReAct Planning Agent] 🔄 正在注册到A2A服务器，Agent ID: ${this.agentId}`);
+    console.log(`[ReAct Planning Agent] 📡 当前WebSocket状态: ${this.ws.readyState} (期望值: 1=OPEN)`);
+
+    if (this.ws.readyState !== 1) { // WebSocket.OPEN = 1
+      console.warn(`[ReAct Planning Agent] ⚠️ WebSocket状态不是OPEN，延迟100ms后重试`);
+      setTimeout(() => this.register(), 100);
+      return;
+    }
 
     const registerMessage: AgentMessage = {
       messageId: uuidv4(),
       senderId: this.agentId,
       receiverId: "a2a-server",
       projectId: "",
-      type: "STATUS_UPDATE" as MessageType,
+      type: MessageType.STATUS_UPDATE,  // 使用枚举值而不是字符串
       content: {
         action: "register",
         name: "ReAct Planning Agent",
@@ -121,8 +141,20 @@ export class ReActPlanningAgent {
       requiresAck: true,
     };
 
-    this.ws.send(JSON.stringify(registerMessage));
-    console.log("[ReAct Planning Agent] 已注册到A2A服务器");
+    try {
+      const messageStr = JSON.stringify(registerMessage);
+      console.log(`[ReAct Planning Agent] 📤 准备发送注册消息，长度: ${messageStr.length} 字节`);
+      console.log(`[ReAct Planning Agent] 📤 消息内容（前200字符）: ${messageStr.substring(0, 200)}...`);
+
+      this.ws.send(messageStr);
+
+      console.log(`[ReAct Planning Agent] ✅ 注册消息已发送到A2A服务器 (MessageType: ${registerMessage.type}, Action: register)`);
+    } catch (error) {
+      console.error(`[ReAct Planning Agent] ❌ 发送注册消息失败:`, error);
+      console.error(`[ReAct Planning Agent] WebSocket状态: ${this.ws.readyState}`);
+      // 重试
+      setTimeout(() => this.register(), 1000);
+    }
   }
 
   /**
@@ -132,10 +164,11 @@ export class ReActPlanningAgent {
     try {
       const data = JSON.parse(message) as AgentMessage;
 
-      console.log(`[ReAct Planning Agent] 收到消息: ${data.type} 来自: ${data.senderId}`);
+      console.log(`[ReAct Planning Agent] 📨 收到消息: ${data.type} 来自: ${data.senderId}, ProjectID: ${data.projectId || 'N/A'}`);
 
       switch (data.type) {
-        case "USER_INPUT" as MessageType:
+        case MessageType.USER_INPUT: {
+          console.log(`[ReAct Planning Agent] 🎯 收到USER_INPUT任务，准备执行ReAct循环`);
           if (data.content && typeof data.content === "object") {
             const content = data.content as any;
             const userId = content.project?.ownerId || 1; // 默认使用1作为userId
@@ -151,7 +184,7 @@ export class ReActPlanningAgent {
           }
           break;
 
-        case "FEEDBACK" as MessageType:
+        case MessageType.FEEDBACK:
           // 处理外部反馈
           if (this.currentProjectId === data.projectId && this.currentContext) {
             if (data.content && typeof data.content === "object") {
@@ -161,7 +194,7 @@ export class ReActPlanningAgent {
           }
           break;
 
-        case "CONTROL" as MessageType:
+        case MessageType.CONTROL:
           if (data.content) {
             await this.handleControlMessage(data.projectId, data.content);
           }
@@ -1062,7 +1095,7 @@ export class ReActPlanningAgent {
         senderId: this.agentId,
         receiverId: "a2a-server",
         projectId: this.currentProjectId,
-        type: "RESULT" as MessageType,
+        type: MessageType.COMPLETION,  // 使用正确的枚举值
         content: {
           success,
           gddPath,
