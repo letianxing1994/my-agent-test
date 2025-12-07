@@ -93,7 +93,11 @@ class TaskStateManager extends EventEmitter {
 	 * 更新任务状态
 	 */
 	updateTaskStatus(taskId: string, status: TaskStatus, metadata?: any): void {
-		const task = this.tasks.get(taskId);
+		let task = this.tasks.get(taskId);
+		// 如果taskId查找失败，尝试用projectId查找（兼容Planning Agent使用projectId的情况）
+		if (!task) {
+			task = this.getTaskByProjectId(taskId);
+		}
 		if (!task) {
 			console.warn(`[TaskState] 任务不存在: ${taskId}`);
 			return;
@@ -136,7 +140,11 @@ class TaskStateManager extends EventEmitter {
 	 * 更新任务进度
 	 */
 	updateTaskProgress(taskId: string, progress: number, metadata?: any): void {
-		const task = this.tasks.get(taskId);
+		let task = this.tasks.get(taskId);
+		// 如果taskId查找失败，尝试用projectId查找（兼容Planning Agent使用projectId的情况）
+		if (!task) {
+			task = this.getTaskByProjectId(taskId);
+		}
 		if (!task) {
 			console.warn(`[TaskState] 任务不存在: ${taskId}`);
 			return;
