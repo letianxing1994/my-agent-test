@@ -9,6 +9,10 @@ export { DynamicPromptGenerator, dynamicPromptGenerator } from "./DynamicPromptG
 // 启动 Planning Agent
 import { ReActPlanningAgent } from "./ReActPlanningAgent";
 
+console.log("\n============================================");
+console.log("🚀 [Planning Agent] 正在启动...");
+console.log("============================================\n");
+
 const planningAgent = new ReActPlanningAgent();
 
 // 连接到 A2A 服务器
@@ -17,6 +21,7 @@ planningAgent.connect().catch((error) => {
   process.exit(1);
 });
 
-console.log("[Planning Agent] 正在启动...");
+console.log("[Planning Agent] 等待来自 A2A 服务器的任务消息...");
+console.log("[Planning Agent] 服务器地址:", process.env.A2A_SERVER_URL || "ws://localhost:8080");
 
 export default planningAgent;

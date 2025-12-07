@@ -2970,6 +2970,58 @@ app.get("/api/tasks/:taskId/status", (req, res) => {
 });
 
 /**
+ * 停止任务
+ * POST /api/tasks/:taskId/stop
+ */
+app.post("/api/tasks/:taskId/stop", (req, res) => {
+	try {
+		const { taskId } = req.params;
+		const task = taskStateManager.getTask(taskId);
+
+		if (!task) {
+			return res.status(404).json({
+				success: false,
+				message: "任务不存在",
+			});
+		}
+
+		// 只能停止运行中或等待中的任务
+		if (task.status !== TaskStatus.RUNNING && task.status !== TaskStatus.PENDING && task.status !== TaskStatus.IN_PROGRESS) {
+			return res.status(400).json({
+				success: false,
+				message: `无法停止${task.status}状态的任务`,
+			});
+		}
+
+		// 更新任务状态为失败
+		taskStateManager.updateTaskStatus(taskId, TaskStatus.FAILED, {
+			errorMessage: "用户手动停止",
+		});
+
+		// TODO: 通知正在执行的 Agent 停止（发送 CONTROL 消息）
+		// 如果有对应的项目，向该项目的 Agent 发送停止指令
+		if (task.projectId) {
+			const project = projectManager.getProject(task.projectId);
+			if (project) {
+				sendControlMessage(project, task.stageId, "abort", {});
+			}
+		}
+
+		res.json({
+			success: true,
+			message: "任务已停止",
+		});
+	} catch (error) {
+		console.error("停止任务失败:", error);
+		res.status(500).json({
+			success: false,
+			message: "停止任务失败",
+			error: (error as Error).message,
+		});
+	}
+});
+
+/**
  * 获取任务结果
  * GET /api/tasks/:taskId/result
  */

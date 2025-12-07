@@ -140,6 +140,7 @@ class TaskStateManager extends EventEmitter {
 			return;
 		}
 
+		const oldProgress = task.progress;
 		task.progress = Math.max(0, Math.min(100, progress));
 
 		// 更新元数据
@@ -152,8 +153,11 @@ class TaskStateManager extends EventEmitter {
 		// 发射事件，通知所有订阅者（SSE 连接）
 		this.emit("taskUpdate", { taskId, task });
 
-		// 定期回调（每10%）
-		if (task.progress % 10 === 0) {
+		// 优化回调：只在进度跨越10%阈值时才回调（例如从15%到25%）
+		// 避免在同一个10%区间内频繁回调
+		const oldThreshold = Math.floor(oldProgress / 10);
+		const newThreshold = Math.floor(task.progress / 10);
+		if (newThreshold > oldThreshold) {
 			this.notifyCallback(task);
 		}
 	}
