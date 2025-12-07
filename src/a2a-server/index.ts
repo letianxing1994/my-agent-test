@@ -2734,6 +2734,8 @@ app.get("/api/projects/:projectId/export", async (req, res) => {
 
 // 存储 SSE 连接
 const sseClients = new Map<string, Express.Response[]>();
+// 存储全局 SSE 连接（用于通知中心，监听所有任务的 user_input_required 事件）
+const globalSseClients: Express.Response[] = [];
 
 /**
  * SSE 端点 - 订阅任务状态更新（实时推送）
@@ -2801,6 +2803,37 @@ app.get("/api/tasks/:taskId/events", (req, res) => {
 			}
 			console.log(`[SSE] 客户端断开任务: ${taskId}, 剩余订阅数: ${clients.length}`);
 		}
+	});
+});
+
+/**
+ * SSE 端点 - 订阅全局任务事件（通知中心）
+ * GET /api/tasks/events/global
+ *
+ * 用于监听所有任务的 user_input_required 事件
+ */
+app.get("/api/tasks/events/global", (req, res) => {
+	// 设置 SSE 响应头
+	res.setHeader("Content-Type", "text/event-stream");
+	res.setHeader("Cache-Control", "no-cache");
+	res.setHeader("Connection", "keep-alive");
+	res.setHeader("Access-Control-Allow-Origin", "*");
+	res.flushHeaders();
+
+	// 添加到全局客户端列表
+	globalSseClients.push(res);
+	console.log(`[SSE] 客户端订阅全局任务事件, 当前订阅数: ${globalSseClients.length}`);
+
+	// 立即发送确认消息
+	res.write(`data: ${JSON.stringify({ type: "connected", message: "已连接到全局任务事件" })}\n\n`);
+
+	// 客户端断开连接时清理
+	req.on("close", () => {
+		const index = globalSseClients.indexOf(res);
+		if (index > -1) {
+			globalSseClients.splice(index, 1);
+		}
+		console.log(`[SSE] 客户端断开全局任务事件, 剩余订阅数: ${globalSseClients.length}`);
 	});
 });
 
@@ -2880,28 +2913,57 @@ function broadcastUserInputRequired(data: {
 	timestamp: Date;
 }) {
 	const { taskId, goalId, question, options, timestamp } = data;
+
+	// 广播给订阅该任务的客户端
 	const clients = sseClients.get(taskId);
-	if (!clients || clients.length === 0) {
-		return;
+	if (clients && clients.length > 0) {
+		const eventData = JSON.stringify({
+			type: "user_input_required",
+			goalId,
+			question,
+			options,
+			timestamp,
+		});
+
+		clients.forEach((client) => {
+			try {
+				(client as any).write(`data: ${eventData}\n\n`);
+			} catch (error) {
+				console.error(`[SSE] 用户输入请求推送失败:`, error);
+			}
+		});
+
+		console.log(`[SSE] 任务 ${taskId} 用户输入请求已推送给 ${clients.length} 个客户端`);
 	}
 
-	const eventData = JSON.stringify({
-		type: "user_input_required",
-		goalId,
-		question,
-		options,
-		timestamp,
-	});
+	// 同时广播给全局客户端（通知中心）
+	if (globalSseClients.length > 0) {
+		// 获取任务信息以包含更多上下文
+		const task = taskStateManager.getTask(taskId);
 
-	clients.forEach((client) => {
-		try {
-			(client as any).write(`data: ${eventData}\n\n`);
-		} catch (error) {
-			console.error(`[SSE] 用户输入请求推送失败:`, error);
-		}
-	});
+		const globalEventData = JSON.stringify({
+			type: "user_input_required",
+			taskId,
+			taskName: task?.projectId || taskId, // 使用 projectId 作为任务名
+			agentName: task?.stageId || '', // 使用 stageId 作为 agent 名
+			goalId,
+			question,
+			options,
+			timestamp,
+		});
 
-	console.log(`[SSE] 任务 ${taskId} 用户输入请求已推送`);
+		globalSseClients.forEach((client, index) => {
+			try {
+				(client as any).write(`data: ${globalEventData}\n\n`);
+			} catch (error) {
+				console.error(`[SSE] 全局用户输入请求推送失败:`, error);
+				// 移除失败的客户端
+				globalSseClients.splice(index, 1);
+			}
+		});
+
+		console.log(`[SSE] 任务 ${taskId} 用户输入请求已推送给 ${globalSseClients.length} 个全局客户端`);
+	}
 }
 
 /**
