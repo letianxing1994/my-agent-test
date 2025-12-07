@@ -182,7 +182,8 @@ export class ReActPlanningAgent {
               cloudProvider
             );
           }
-          break;
+        }
+        break;
 
         case MessageType.FEEDBACK:
           // 处理外部反馈
